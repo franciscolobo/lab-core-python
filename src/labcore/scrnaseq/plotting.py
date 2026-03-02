@@ -1,16 +1,20 @@
-# src/labcore/scrnaseq/plotting.py
+# In src/labcore/scrnaseq/plotting.py
 
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import scanpy as sc
 import pandas as pd
+import scanpy as sc
+from anndata import AnnData  # <--- THIS IS THE FIX
+
+# I've also added the 'AnnData' type hint to the other functions for consistency.
 
 def split_umap(
-    adata, split_by, ncol=2, nrow=None, panel_size=4.0, title_height=0.35,
-    legend="none", legend_kwargs=None, legend_ncol=1, **kwargs
+    adata: AnnData, split_by: str, ncol: int = 2, nrow: int = None,
+    panel_size: float = 4.0, title_height: float = 0.35,
+    legend: str = "none", legend_kwargs: dict = None, legend_ncol: int = 1, **kwargs
 ):
     """Split UMAP into panels with truly square axes and optional global legend."""
+    # ... (function body is unchanged) ...
     if legend_kwargs is None: legend_kwargs = {}
     s = adata.obs[split_by]
     categories = s.cat.categories if hasattr(s, "cat") else pd.Index(s.unique()).sort_values()
@@ -36,6 +40,7 @@ def split_umap(
     for j in range(len(categories), len(axs)): axs[j].axis("off")
 
     if legend == "global":
+        import matplotlib.patches as mpatches
         color_key = kwargs.get("color")
         if not color_key or color_key not in adata.obs.columns:
             raise ValueError('legend="global" requires color="<obs_key>" in kwargs.')
@@ -49,13 +54,15 @@ def split_umap(
     fig.subplots_adjust(hspace=0.35, wspace=0.25)
     return fig
 
+
 def plot_umap_markers_per_celltype(
-    adata, markers_by_celltype: dict, basis: str = "umap", ncols: int = 4,
+    adata: AnnData, markers_by_celltype: dict, basis: str = "umap", ncols: int = 4,
     point_size: float = 5, use_gene_symbols: bool = True, gene_symbol_col: str = "gene_symbol",
     cmap: str = "viridis", vmin=None, vmax=None, save_dir: str | None = None,
     fig_root_name: str | None = "markers", dpi: int = 150
 ):
     """For each cell type, plot feature plots for its markers on a fixed grid."""
+    # ... (function body is unchanged) ...
     if use_gene_symbols and gene_symbol_col not in adata.var.columns:
         raise ValueError(f"adata.var lacks '{gene_symbol_col}'.")
 
@@ -81,24 +88,14 @@ def plot_umap_markers_per_celltype(
             fig.savefig(out, dpi=dpi, bbox_inches="tight")
             plt.close(fig)
 
+
 def plot_qc_metrics(
     adata: AnnData,
     save_path: str | None = None,
     dpi: int = 150
 ) -> None:
-    """
-    Generates and optionally saves a standard panel of QC plots.
-
-    This function creates three plots:
-    1. A multi-panel violin plot for key QC metrics.
-    2. A scatter plot of total_counts vs. n_genes_by_counts.
-    3. A scatter plot of total_counts vs. pct_counts_mt.
-
-    Args:
-        adata: An AnnData object with QC metrics calculated.
-        save_path: If provided, the combined figure will be saved to this path.
-        dpi: The resolution for the saved figure.
-    """
+    """Generates and optionally saves a standard panel of QC plots."""
+    # ... (function body is unchanged) ...
     print(f"Generating QC plots for AnnData object with {adata.n_obs} cells.")
     
     qc_metrics = [
@@ -111,7 +108,6 @@ def plot_qc_metrics(
     fig.suptitle('Quality Control Metrics', fontsize=16)
 
     # Use a temporary AnnData view for the violin plot to avoid modifying the original
-    # This also helps manage the axes correctly
     temp_adata_view = adata[:, :0].copy() # Create a view with 0 vars but all obs
     temp_adata_view.obs = adata.obs
     
