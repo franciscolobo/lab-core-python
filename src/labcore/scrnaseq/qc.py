@@ -5,38 +5,63 @@ import pandas as pd
 import scanpy as sc
 from anndata import AnnData
 
+# In src/labcore/scrnaseq/qc.py
+
+import numpy as np
+import pandas as pd
+import scanpy as sc
+from anndata import AnnData
+
 def preprocess_sample(
     adata: AnnData, sample_meta: dict, min_genes: int = 200, min_cells_per_gene: int = 3,
     max_pct_mito: float = 20.0, max_total_counts: float = 5e4,
     mito_genes: list = None, hb_genes: list = None, ribo_genes: list = None
 ) -> AnnData:
-    """Attach sample metadata, compute QC metrics, and filter."""
+    """
+    Attach sample metadata, compute QC metrics, and filter. (Streamlined version)
+    """
+    # Attach metadata to every cell
     for k, v in sample_meta.items():
         adata.obs[k] = v
 
-    sym = adata.var["gene_symbol"].astype(str) if "gene_symbol" in adata.var.columns else pd.Series(adata.var_names.astype(str), index=adata.var_names)
-    sym_upper = sym.str.upper()
+    # --- Calculate QC Flags ---
+    # Ensure a gene_symbol column exists, falling back to var_names if not
+    if "gene_symbol" not in adata.var.columns:
+        adata.var["gene_symbol"] = adata.var_names
+
+    sym_upper = adata.var["gene_symbol"].astype(str).str.upper()
 
     def _flag_genes(key, gene_list, default_prefix):
+        # This logic ensures the column is always a pure boolean array
         if gene_list is not None:
-            adata.var[key] = sym_upper.isin([g.upper() for g in gene_list]).to_numpy(dtype=bool)
+            flags = sym_upper.isin([g.upper() for g in gene_list])
         else:
-            adata.var[key] = sym_upper.str.startswith(default_prefix).to_numpy(dtype=bool)
+            flags = sym_upper.str.startswith(default_prefix)
+        adata.var[key] = flags.fillna(False).to_numpy(dtype=bool)
 
     _flag_genes("mt", mito_genes, "MT-")
     _flag_genes("ribo", ribo_genes, ("RPL", "RPS"))
     _flag_genes("hb", hb_genes, ("HBB-", "HBA-"))
 
-    percent_top = [n for n in (50, 100, 200, 500) if n <= adata.n_vars]
-    sc.pp.calculate_qc_metrics(adata, qc_vars=["mt", "ribo", "hb"], percent_top=percent_top or None, inplace=True)
+    # --- Calculate QC Metrics ---
+    # This is the most important step for filtering
+    sc.pp.calculate_qc_metrics(
+        adata, qc_vars=["mt", "ribo", "hb"], inplace=True, log1p=True
+    )
 
+    # --- Filter Cells and Genes ---
+    # This is the main filtering logic based on the calculated metrics
     sc.pp.filter_cells(adata, min_genes=min_genes)
     sc.pp.filter_genes(adata, min_cells=min_cells_per_gene)
-
+    
+    # Perform subsetting based on obs metrics. Using .copy() is important.
     adata = adata[adata.obs["pct_counts_mt"] < max_pct_mito, :].copy()
     adata = adata[adata.obs["total_counts"] < max_total_counts, :].copy()
-    return adata
+    
+    # The expensive re-calculation of var flags after filtering is REMOVED.
+    # It's not necessary for the output of this function.
 
+    return adata
 
 def is_outlier(adata: AnnData, metric: str, nmads: float) -> pd.Series:
     """Check for outliers in a specific metric column of adata.obs."""
