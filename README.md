@@ -1,0 +1,117 @@
+# lab-core-python
+
+A Core Python Toolkit for **CDBL**
+
+This repository, `lab-core-python`, contains the source code for the `labcore` package. Its purpose is to centralize and standardize common data analysis functions used across different projects in our lab, ensuring that our code is reusable, well-documented, and easy to maintain.
+
+Currently, it includes a comprehensive toolkit for single-cell RNA-Seq analysis, with plans to expand into other domains.
+
+## Key Features
+
+- **Standardized Data I/O:** Tools for reading specific file formats, such as CellBender's H5 output, in a consistent way.
+- **Robust Quality Control:** A modular QC pipeline for filtering cells and genes based on adaptive, per-library statistics (NMAD).
+- **Advanced Plotting:** High-level functions for creating complex, publication-quality plots like multi-panel UMAPs.
+- **Modular by Design:** Organized into logical sub-packages (e.g., `scrnaseq`) so you only import what you need.
+- **Easy to Install:** Can be installed directly from GitHub into any Python environment.
+
+---
+
+## Installation
+
+You can install the `labcore` package directly from this GitHub repository using `pip`.
+
+### Standard Installation
+
+For general use in your projects, install the latest version from the `main` branch:
+
+pip install git+https://github.com/[your-github-username]/lab-core-python.git
+
+To upgrade to the latest version, use the --upgrade flag:
+
+pip install --upgrade git+https://github.com/[your-github-username]/lab-core-python.git
+Developer Installation
+If you plan to contribute functions or modify the existing code, you should clone the repository and install it in "editable" mode. This links the installed package to your local source code, so any changes you make are immediately reflected in your environment without needing to reinstall.
+
+1. Clone the repository
+
+git clone https://github.com/[your-github-username]/lab-core-python.git
+
+2. Navigate into the directory
+
+cd lab-core-python
+
+3. Install in editable mode
+
+pip install -e .
+
+### Quick Start: scRNA-Seq QC Pipeline
+Here is a basic example of how to use the scrnaseq module to load, preprocess, and filter a sample.
+
+import scanpy as sc
+from labcore import scrnaseq
+
+1. Load Data
+- Use the custom I/O function to read a CellBender output file
+adata = scrnaseq.read_cellbender_matrix_h5("path/to/your/cellbender_output.h5")
+
+2. Preprocess and Filter
+- Define metadata for this sample
+sample_info = {
+    'sample_id': 'sample_01',
+    'condition': 'treatment'
+}
+
+Run the standard preprocessing and QC filtering pipeline
+
+adata_processed = scrnaseq.preprocess_sample(
+    adata=adata,
+    sample_meta=sample_info,
+    max_pct_mito=15.0  # Example: filter cells with >15% mitochondrial reads
+)
+
+3. Advanced Outlier Removal (Optional)
+
+For more robust QC, remove outlier cells on a per-sample basis
+using adaptive thresholds.
+
+adata_filtered = scrnaseq.filter_outlier_cells(
+    adata=adata_processed,
+    library_key='sample_id',
+    qc_metrics=['log1p_total_counts', 'log1p_n_genes_by_counts', 'pct_counts_mt']
+)
+
+print(f"Analysis complete. Final cell count: {adata_filtered.n_obs}")
+
+## Package Structure
+
+The labcore package is organized into logical sub-packages to keep code for different domains separate.
+
+labcore.scrnaseq: A comprehensive toolkit for single-cell RNA sequencing analysis.
+
+labcore.scrnaseq.io: Data loading and writing functions.
+
+labcore.scrnaseq.qc: Quality control and filtering.
+
+labcore.scrnaseq.plotting: Visualization utilities.
+
+labcore.scrnaseq.utils: Miscellaneous helper functions.
+
+(More sub-packages for genomics, proteomics, etc., will be added here in the future).
+
+## Contributing
+
+Contributions from all lab members are welcome and encouraged! To add new functionality:
+
+Follow the Structure: Decide which sub-package your function belongs to (e.g., plotting, qc). If a new domain is needed, you can create a new sub-package.
+
+Write Your Function: Add your function to the appropriate .py file (e.g., src/labcore/scrnaseq/plotting.py).
+
+Document It: Add a clear, Google-style docstring explaining what the function does, its parameters, and what it returns.
+
+Promote It: Add your new function to the __init__.py file within its sub-package directory (e.g., src/labcore/scrnaseq/__init__.py) to make it easily importable.
+
+Submit a Pull Request: Push your changes to a new branch and open a pull request for review.
+
+## License
+This project is licensed under the MIT License. See the LICENSE file for details.
+
