@@ -105,8 +105,14 @@ def run_standard_analysis(
     adata.raw = adata.copy()
 
     # Find HVGs
-    sc.pp.highly_variable_genes(adata, flavor="seurat_v3", n_top_genes=n_top_genes)
-    
+    print("Finding highly variable genes using raw counts...")
+    sc.pp.highly_variable_genes(
+        adata,
+        flavor="seurat_v3",
+        n_top_genes=n_top_genes,
+        layer="counts",  # <--- ADD THIS ARGUMENT
+    )
+ 
     adata_hvg = adata[:, adata.var["highly_variable"]].copy()
     sc.pp.scale(adata_hvg, max_value=10)
     sc.tl.pca(adata_hvg, n_pcs=n_pcs, svd_solver="arpack")
