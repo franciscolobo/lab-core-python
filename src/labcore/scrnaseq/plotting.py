@@ -15,7 +15,6 @@ def split_umap(
     legend: str = "none", legend_kwargs: dict = None, legend_ncol: int = 1, **kwargs
 ):
     """Split UMAP into panels with truly square axes and optional global legend."""
-    # ... (function body is unchanged) ...
     if legend_kwargs is None: legend_kwargs = {}
     s = adata.obs[split_by]
     categories = s.cat.categories if hasattr(s, "cat") else pd.Index(s.unique()).sort_values()
@@ -55,6 +54,7 @@ def split_umap(
     fig.subplots_adjust(hspace=0.35, wspace=0.25)
     return fig
 
+
 def plot_umap_markers_per_celltype(
     adata: AnnData,
     markers_by_celltype: dict,
@@ -69,7 +69,7 @@ def plot_umap_markers_per_celltype(
     save_dir: str | None = None,
     fig_root_name: str | None = "markers",
     dpi: int = 150,
-    combine_figures: bool = False, # <-- NEW PARAMETER
+    combine_figures: bool = False,
 ) -> None:
     """
     For each cell type, plot UMAP feature plots for its markers.
@@ -102,41 +102,52 @@ def plot_umap_markers_per_celltype(
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
 
-    # --- NEW LOGIC FOR COMBINED FIGURE ---
+    # --- NEW, MORE ROBUST LOGIC FOR COMBINED FIGURE ---
     if combine_figures:
+        import matplotlib.gridspec as gridspec
+
+        # Calculate layout properties for all cell types first
+        cell_type_layouts = {}
         total_rows = 0
         for cell_type in sorted(markers_by_celltype.keys()):
-            num_markers = len(markers_by_celltype[cell_type])
-            total_rows += int(np.ceil(num_markers / ncols)) if num_markers > 0 else 0
+            num_markers = len(markers_by_celltype.get(cell_type, []))
+            if num_markers > 0:
+                nrows = int(np.ceil(num_markers / ncols))
+                cell_type_layouts[cell_type] = nrows
+                total_rows += nrows
 
         if total_rows == 0:
             print("No markers to plot in combined figure.")
             return
 
+        # Define figure size: each plot is ~3x3 inches, add space for titles
         fig_w = 3.2 * ncols
-        fig_h = 3.2 * total_rows  # Adjust height based on total rows
-        fig, all_axs = plt.subplots(total_rows, ncols, figsize=(fig_w, fig_h), constrained_layout=True)
-        all_axs = np.array(all_axs).flatten()
-        
-        current_ax_idx = 0
-        for cell_type in sorted(markers_by_celltype.keys()):
-            genes = list(markers_by_celltype[cell_type])
-            if not genes:
-                continue
+        fig_h = 3.2 * total_rows + (1.0 * len(cell_type_layouts)) # Add 1 inch of space per title
+        fig = plt.figure(figsize=(fig_w, fig_h))
 
-            num_cell_rows = int(np.ceil(len(genes) / ncols))
-            num_plots_for_cell = num_cell_rows * ncols
-            
-            # Add a title for this section
-            first_ax_pos = all_axs[current_ax_idx].get_position()
-            fig.text(
-                0.5, first_ax_pos.y1 + 0.01 / fig.get_figheight(), str(cell_type), 
-                ha='center', va='bottom', fontsize=16, weight='bold', transform=fig.transFigure
+        # Create a master GridSpec for all rows
+        gs_master = gridspec.GridSpec(total_rows, 1, figure=fig, hspace=0.8)
+
+        current_row_offset = 0
+        for cell_type, nrows_for_cell in cell_type_layouts.items():
+            genes = markers_by_celltype[cell_type]
+
+            # Create a sub-grid for this cell type's plots
+            gs_cell = gridspec.GridSpecFromSubplotSpec(
+                nrows_for_cell, ncols,
+                subplot_spec=gs_master[current_row_offset : current_row_offset + nrows_for_cell],
+                wspace=0.3, hspace=0.4
             )
+            
+            # --- Add the Title ---
+            # Place the title at the top of this cell type's sub-grid
+            ax_title = fig.add_subplot(gs_master[current_row_offset])
+            ax_title.text(0.5, 1.0, str(cell_type), ha='center', va='top', fontsize=18, weight='bold', transform=ax_title.transAxes)
+            ax_title.axis('off')
 
-            for i in range(num_plots_for_cell):
-                ax = all_axs[current_ax_idx + i]
+            for i in range(nrows_for_cell * ncols):
                 if i < len(genes):
+                    ax = fig.add_subplot(gs_cell[i])
                     g = genes[i]
                     sc.pl.embedding(
                         adata, basis=basis, color=g,
@@ -144,9 +155,9 @@ def plot_umap_markers_per_celltype(
                         ax=ax, show=False, size=point_size, cmap=cmap,
                         vmin=vmin, vmax=vmax, frameon=False, title=str(g)
                     )
-                else:
-                    ax.axis("off")
-            current_ax_idx += num_plots_for_cell
+                # No need to turn off extra axes, GridSpec handles it
+            
+            current_row_offset += nrows_for_cell
 
         if save_dir:
             out_path = os.path.join(save_dir, f"{fig_root_name}.all_celltypes_combined.png")
@@ -156,7 +167,7 @@ def plot_umap_markers_per_celltype(
         else:
             plt.show()
 
-    # --- ORIGINAL LOGIC FOR SEPARATE FIGURES ---
+    # --- ORIGINAL LOGIC FOR SEPARATE FIGURES (UNCHANGED) ---
     else:
         for cell_type in sorted(markers_by_celltype.keys()):
             genes = list(markers_by_celltype[cell_type])
@@ -188,6 +199,7 @@ def plot_umap_markers_per_celltype(
             else:
                 plt.show()
 
+
 def plot_qc_metrics(
     adata: AnnData,
     save_prefix: str | None = None,
@@ -195,7 +207,6 @@ def plot_qc_metrics(
 ) -> None:
     """
     Generates and optionally saves a standard panel of QC plots as separate files.
-    ... (docstring is unchanged) ...
     """
     print(f"Generating QC plots for AnnData object with {adata.n_obs} cells.")
 
@@ -232,7 +243,6 @@ def plot_qc_metrics(
         plt.show() # Or show it if not saving
 
     # --- 2. SCATTER PLOTS ---
-    # This part was already correct and remains unchanged.
     print("Generating scatter plots...")
     fig_scatter, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     fig_scatter.suptitle('QC Scatter Plots', fontsize=16)
