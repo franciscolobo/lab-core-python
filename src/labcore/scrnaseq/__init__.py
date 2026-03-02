@@ -19,6 +19,10 @@ from .utils import (
     adata_status,
 )
 
+# From workflows.py
+from .workflows import load_and_preprocess_from_manifest, run_standard_analysis
+
+
 # Define what 'from labcore.scrnaseq import *' will import
 __all__ = [
     "read_cellbender_matrix_h5",
@@ -32,4 +36,6 @@ __all__ = [
     "map_markers_to_ids",
     "markers_df_to_dict",
     "adata_status",
+    "load_and_preprocess_from_manifest",
+    "run_standard_analysis",
 ]
