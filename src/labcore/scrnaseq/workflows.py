@@ -55,7 +55,9 @@ def load_and_preprocess_from_manifest(
         
         # Attach gene symbols from the comprehensive map
         ids = pd.Index(adata.var_names.astype(str))
-        adata.var["gene_symbol"] = ids.map(gene_map).fillna(ids)
+        # Create a new Series from the map, then fill its NaNs with another Series (the original IDs)
+        mapped_symbols = pd.Series(ids.map(gene_map), index=ids)
+        adata.var["gene_symbol"] = mapped_symbols.fillna(pd.Series(ids, index=ids))
         
         # Run per-sample preprocessing and filtering
         adata_processed = preprocess_sample(adata, sample_meta=sample_meta, **preprocess_kwargs)
