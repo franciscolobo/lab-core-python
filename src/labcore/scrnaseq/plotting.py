@@ -102,62 +102,42 @@ def plot_umap_markers_per_celltype(
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
 
-    # --- NEW, MORE ROBUST LOGIC FOR COMBINED FIGURE ---
+    # --- NEW, MOST ROBUST LOGIC FOR COMBINED FIGURE USING SUBFIGURES ---
     if combine_figures:
-        import matplotlib.gridspec as gridspec
-
-        # Calculate layout properties for all cell types first
-        cell_type_layouts = {}
-        total_rows = 0
-        for cell_type in sorted(markers_by_celltype.keys()):
-            num_markers = len(markers_by_celltype.get(cell_type, []))
-            if num_markers > 0:
-                nrows = int(np.ceil(num_markers / ncols))
-                cell_type_layouts[cell_type] = nrows
-                total_rows += nrows
-
-        if total_rows == 0:
+        cell_types_to_plot = sorted([ct for ct, genes in markers_by_celltype.items() if genes])
+        if not cell_types_to_plot:
             print("No markers to plot in combined figure.")
             return
-
-        # Define figure size: each plot is ~3x3 inches, add space for titles
-        fig_w = 3.2 * ncols
-        fig_h = 3.2 * total_rows + (1.0 * len(cell_type_layouts)) # Add 1 inch of space per title
-        fig = plt.figure(figsize=(fig_w, fig_h))
-
-        # Create a master GridSpec for all rows
-        gs_master = gridspec.GridSpec(total_rows, 1, figure=fig, hspace=0.8)
-
-        current_row_offset = 0
-        for cell_type, nrows_for_cell in cell_type_layouts.items():
-            genes = markers_by_celltype[cell_type]
-
-            # Create a sub-grid for this cell type's plots
-            gs_cell = gridspec.GridSpecFromSubplotSpec(
-                nrows_for_cell, ncols,
-                subplot_spec=gs_master[current_row_offset : current_row_offset + nrows_for_cell],
-                wspace=0.3, hspace=0.4
-            )
             
-            # --- Add the Title ---
-            # Place the title at the top of this cell type's sub-grid
-            ax_title = fig.add_subplot(gs_master[current_row_offset])
-            ax_title.text(0.5, 1.0, str(cell_type), ha='center', va='top', fontsize=18, weight='bold', transform=ax_title.transAxes)
-            ax_title.axis('off')
+        n_cell_types = len(cell_types_to_plot)
+        
+        # Calculate figure height based on the total number of plot rows required
+        total_plot_rows = sum(int(np.ceil(len(markers_by_celltype[ct]) / ncols)) for ct in cell_types_to_plot)
+        fig_h = (3.5 * total_plot_rows) / n_cell_types # Average height per subfigure
+        
+        fig = plt.figure(figsize=(3.2 * ncols, fig_h * n_cell_types), constrained_layout=True)
+        subfigs = fig.subfigures(n_cell_types, 1, hspace=0.1)
 
-            for i in range(nrows_for_cell * ncols):
-                if i < len(genes):
-                    ax = fig.add_subplot(gs_cell[i])
-                    g = genes[i]
+        for i, cell_type in enumerate(cell_types_to_plot):
+            subfig = subfigs[i]
+            subfig.suptitle(cell_type, fontsize=16, weight='bold')
+
+            genes = markers_by_celltype[cell_type]
+            nrows = int(np.ceil(len(genes) / ncols))
+            axs = subfig.subplots(nrows, ncols)
+            axs = np.array(axs).flatten()
+
+            for j, ax in enumerate(axs):
+                if j < len(genes):
+                    g = genes[j]
                     sc.pl.embedding(
                         adata, basis=basis, color=g,
                         gene_symbols=gene_symbol_col if use_gene_symbols else None,
                         ax=ax, show=False, size=point_size, cmap=cmap,
                         vmin=vmin, vmax=vmax, frameon=False, title=str(g)
                     )
-                # No need to turn off extra axes, GridSpec handles it
-            
-            current_row_offset += nrows_for_cell
+                else:
+                    ax.axis("off")
 
         if save_dir:
             out_path = os.path.join(save_dir, f"{fig_root_name}.all_celltypes_combined.png")
@@ -170,7 +150,7 @@ def plot_umap_markers_per_celltype(
     # --- ORIGINAL LOGIC FOR SEPARATE FIGURES (UNCHANGED) ---
     else:
         for cell_type in sorted(markers_by_celltype.keys()):
-            genes = list(markers_by_celltype[cell_type])
+            genes = list(markers_by_celltype.get(cell_type, []))
             if not genes:
                 continue
 
@@ -178,9 +158,9 @@ def plot_umap_markers_per_celltype(
             fig, axs = plt.subplots(nrows, ncols, figsize=(3.2 * ncols, 3.2 * nrows), constrained_layout=True)
             axs = np.array(axs).flatten()
 
-            for i, ax in enumerate(axs):
-                if i < len(genes):
-                    g = genes[i]
+            for j, ax in enumerate(axs):
+                if j < len(genes):
+                    g = genes[j]
                     sc.pl.embedding(
                         adata, basis=basis, color=g,
                         gene_symbols=gene_symbol_col if use_gene_symbols else None,
