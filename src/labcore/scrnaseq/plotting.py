@@ -4,7 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import scanpy as sc
-from anndata import AnnData  # <--- THIS IS THE FIX
+from anndata import AnnData
+import os
 
 # I've also added the 'AnnData' type hint to the other functions for consistency.
 
