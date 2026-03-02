@@ -37,5 +37,6 @@ __all__ = [
     "markers_df_to_dict",
     "adata_status",
     "load_and_preprocess_from_manifest",
+    "plot_qc_metrics",
     "run_standard_analysis",
 ]

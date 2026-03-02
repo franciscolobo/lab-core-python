@@ -80,3 +80,63 @@ def plot_umap_markers_per_celltype(
             out = os.path.join(save_dir, f"{fig_root_name}.{cell_type}.{basis}.png")
             fig.savefig(out, dpi=dpi, bbox_inches="tight")
             plt.close(fig)
+
+def plot_qc_metrics(
+    adata: AnnData,
+    save_path: str | None = None,
+    dpi: int = 150
+) -> None:
+    """
+    Generates and optionally saves a standard panel of QC plots.
+
+    This function creates three plots:
+    1. A multi-panel violin plot for key QC metrics.
+    2. A scatter plot of total_counts vs. n_genes_by_counts.
+    3. A scatter plot of total_counts vs. pct_counts_mt.
+
+    Args:
+        adata: An AnnData object with QC metrics calculated.
+        save_path: If provided, the combined figure will be saved to this path.
+        dpi: The resolution for the saved figure.
+    """
+    print(f"Generating QC plots for AnnData object with {adata.n_obs} cells.")
+    
+    qc_metrics = [
+        'n_genes_by_counts', 'total_counts', 'pct_counts_mt',
+        'pct_counts_ribo', 'pct_counts_hb'
+    ]
+    available_metrics = [m for m in qc_metrics if m in adata.obs.columns]
+
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle('Quality Control Metrics', fontsize=16)
+
+    # Use a temporary AnnData view for the violin plot to avoid modifying the original
+    # This also helps manage the axes correctly
+    temp_adata_view = adata[:, :0].copy() # Create a view with 0 vars but all obs
+    temp_adata_view.obs = adata.obs
+    
+    sc.pl.violin(
+        temp_adata_view,
+        keys=available_metrics,
+        jitter=0.4,
+        multi_panel=True,
+        show=False,
+        ax=ax1
+    )
+    ax1.set_title("QC Metric Distributions")
+    
+    sc.pl.scatter(adata, x='total_counts', y='n_genes_by_counts', color='pct_counts_mt', ax=ax2, show=False)
+    ax2.set_title("Counts vs. Genes (color=MT%)")
+
+    sc.pl.scatter(adata, x='total_counts', y='pct_counts_mt', ax=ax3, show=False)
+    ax3.set_title("Counts vs. MT%")
+
+    fig.tight_layout(rect=[0, 0.03, 1, 0.95])
+    
+    if save_path:
+        print(f"Saving QC plot to: {save_path}")
+        fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+    else:
+        plt.show()
+
