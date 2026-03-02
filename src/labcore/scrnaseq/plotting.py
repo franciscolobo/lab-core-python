@@ -187,27 +187,14 @@ def plot_umap_markers_per_celltype(
             else:
                 plt.show()
 
-
 def plot_qc_metrics(
     adata: AnnData,
-    save_prefix: str | None = None, # <-- Changed from save_path
+    save_prefix: str | None = None,
     dpi: int = 150
 ) -> None:
     """
     Generates and optionally saves a standard panel of QC plots as separate files.
-
-    This function creates and saves two figures:
-    1. A multi-panel violin plot for key QC metrics.
-    2. A figure with two scatter plots:
-        - total_counts vs. n_genes_by_counts
-        - total_counts vs. pct_counts_mt
-
-    Args:
-        adata: An AnnData object with QC metrics calculated.
-        save_prefix: If provided, the plots will be saved with this prefix.
-                     E.g., a prefix of "results/my_qc" will create
-                     "results/my_qc_violins.png" and "results/my_qc_scatters.png".
-        dpi: The resolution for the saved figures.
+    ... (docstring is unchanged) ...
     """
     print(f"Generating QC plots for AnnData object with {adata.n_obs} cells.")
 
@@ -219,49 +206,40 @@ def plot_qc_metrics(
 
     # --- 1. VIOLIN PLOTS ---
     print("Generating violin plots...")
-    fig_violin = sc.pl.violin(
+
+    # Let scanpy create the plot. We do NOT pass 'return_fig' here.
+    sc.pl.violin(
         adata,
         keys=available_metrics,
         jitter=0.4,
         multi_panel=True,
-        show=False,
-        return_fig=True, # <-- Important: get the figure object back
+        show=False, # <-- Keep this to prevent premature display
     )
+
+    # --- THIS IS THE FIX ---
+    # After the plot is created, grab the current figure using matplotlib's standard function.
+    fig_violin = plt.gcf()
     fig_violin.suptitle("QC Metric Distributions", y=1.02)
 
     if save_prefix:
         violin_path = f"{save_prefix}_violins.png"
         print(f"Saving violin plots to: {violin_path}")
-        # Ensure directory exists
         os.makedirs(os.path.dirname(violin_path) or '.', exist_ok=True)
         fig_violin.savefig(violin_path, dpi=dpi, bbox_inches="tight")
-        plt.close(fig_violin)
+        plt.close(fig_violin) # Important: close the figure after saving
     else:
-        plt.show()
-
+        plt.show() # Or show it if not saving
 
     # --- 2. SCATTER PLOTS ---
+    # This part was already correct and remains unchanged.
     print("Generating scatter plots...")
     fig_scatter, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     fig_scatter.suptitle('QC Scatter Plots', fontsize=16)
 
-    sc.pl.scatter(
-        adata,
-        x='total_counts',
-        y='n_genes_by_counts',
-        color='pct_counts_mt',
-        ax=ax1,
-        show=False
-    )
+    sc.pl.scatter(adata, x='total_counts', y='n_genes_by_counts', color='pct_counts_mt', ax=ax1, show=False)
     ax1.set_title("Counts vs. Genes (color=MT%)")
 
-    sc.pl.scatter(
-        adata,
-        x='total_counts',
-        y='pct_counts_mt',
-        ax=ax2,
-        show=False
-    )
+    sc.pl.scatter(adata, x='total_counts', y='pct_counts_mt', ax=ax2, show=False)
     ax2.set_title("Counts vs. MT%")
 
     fig_scatter.tight_layout(rect=[0, 0.03, 1, 0.95])
@@ -269,7 +247,6 @@ def plot_qc_metrics(
     if save_prefix:
         scatter_path = f"{save_prefix}_scatters.png"
         print(f"Saving scatter plots to: {scatter_path}")
-        # Ensure directory exists
         os.makedirs(os.path.dirname(scatter_path) or '.', exist_ok=True)
         fig_scatter.savefig(scatter_path, dpi=dpi, bbox_inches="tight")
         plt.close(fig_scatter)
