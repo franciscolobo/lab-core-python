@@ -77,8 +77,9 @@ def load_and_preprocess_from_manifest(
     
     # Ensure final object has a clean gene symbol column
     ids = pd.Index(adata_full.var_names.astype(str))
-    adata_full.var["gene_symbol"] = ids.map(gene_map).fillna(ids)
-    
+    mapped_symbols_full = pd.Series(ids.map(gene_map), index=ids)
+    adata_full.var["gene_symbol"] = mapped_symbols_full.fillna(pd.Series(ids, index=ids))
+
     print("Workflow complete. Final object shape:", adata_full.shape)
     return adata_full
 
