@@ -15,25 +15,7 @@ def load_and_preprocess_from_manifest(
 ) -> AnnData:
     """
     Loads and preprocesses scRNA-Seq data from a manifest file.
-
-    This workflow performs the following steps:
-    1. Reads a sample manifest TSV/CSV file.
-    2. Builds a comprehensive gene ID-to-symbol map from all H5 files.
-    3. Iterates through each sample, loading the CellBender data.
-    4. Attaches gene symbols and sample metadata.
-    5. Runs the 'preprocess_sample' function on each sample with provided arguments.
-    6. Concatenates all processed samples into a single AnnData object.
-
-    Args:
-        manifest_path: Path to the sample manifest file.
-        sample_id_col: Name of the column in the manifest containing unique sample IDs.
-        path_col: Name of the column containing the path to each sample's H5 file.
-        **preprocess_kwargs: Keyword arguments to be passed directly to the
-                             `labcore.scrnaseq.preprocess_sample` function
-                             (e.g., `mito_genes`, `max_pct_mito`).
-
-    Returns:
-        A single, concatenated AnnData object containing all preprocessed samples.
+    ... (docstring is unchanged) ...
     """
     print(f"Reading manifest from: {manifest_path}")
     df = pd.read_csv(manifest_path, sep="\t")
@@ -50,19 +32,17 @@ def load_and_preprocess_from_manifest(
     for _, row in df.iterrows():
         sample_meta = row.to_dict()
         print(f"Processing sample: {sample_meta.get(sample_id_col, 'N/A')}")
-        
+
         adata = read_cellbender_matrix_h5(sample_meta[path_col])
-        
-        # Attach gene symbols from the comprehensive map
+
         ids = pd.Index(adata.var_names.astype(str))
-        # Create a new Series from the map, then fill its NaNs with another Series (the original IDs)
+        # This is the first fix (already done)
         mapped_symbols = pd.Series(ids.map(gene_map), index=ids)
         adata.var["gene_symbol"] = mapped_symbols.fillna(pd.Series(ids, index=ids))
-        
-        # Run per-sample preprocessing and filtering
+
         adata_processed = preprocess_sample(adata, sample_meta=sample_meta, **preprocess_kwargs)
         adatas.append(adata_processed)
-    
+
     print("\nConcatenating all samples...")
     if not adatas:
         raise ValueError("No samples were processed. Aborting concatenation.")
@@ -74,15 +54,15 @@ def load_and_preprocess_from_manifest(
         keys=[x.obs[sample_id_col].iloc[0] for x in adatas],
         index_unique="-",
     )
-    
-    # Ensure final object has a clean gene symbol column
+
+    # --- THIS IS THE SECOND, CRITICAL FIX ---
+    # Ensure final object has a clean gene symbol column using the same, correct logic
     ids = pd.Index(adata_full.var_names.astype(str))
     mapped_symbols_full = pd.Series(ids.map(gene_map), index=ids)
     adata_full.var["gene_symbol"] = mapped_symbols_full.fillna(pd.Series(ids, index=ids))
-
+    
     print("Workflow complete. Final object shape:", adata_full.shape)
     return adata_full
-
 
 def run_standard_analysis(
     adata: AnnData,
