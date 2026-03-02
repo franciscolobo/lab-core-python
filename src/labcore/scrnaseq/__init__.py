@@ -9,7 +9,7 @@ from .io import read_cellbender_matrix_h5, build_gene_map_from_h5_paths
 from .qc import preprocess_sample, filter_outlier_cells, is_outlier
 
 # From plotting.py
-from .plotting import split_umap, plot_umap_markers_per_celltype
+from .plotting import split_umap, plot_umap_markers_per_celltype, plot_qc_metrics
 
 # From utils.py
 from .utils import (
