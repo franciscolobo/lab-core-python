@@ -115,7 +115,7 @@ def run_standard_analysis(
  
     adata_hvg = adata[:, adata.var["highly_variable"]].copy()
     sc.pp.scale(adata_hvg, max_value=10)
-    sc.tl.pca(adata_hvg, n_pcs=n_pcs, svd_solver="arpack")
+    sc.tl.pca(adata_hvg, n_comps=n_pcs, svd_solver="arpack")
     
     # If the requested representation doesn't exist on the HVG object (e.g. Harmony),
     # copy it from the full object.
