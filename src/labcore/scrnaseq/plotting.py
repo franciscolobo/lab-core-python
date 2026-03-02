@@ -54,85 +54,225 @@ def split_umap(
     fig.subplots_adjust(hspace=0.35, wspace=0.25)
     return fig
 
-
 def plot_umap_markers_per_celltype(
-    adata: AnnData, markers_by_celltype: dict, basis: str = "umap", ncols: int = 4,
-    point_size: float = 5, use_gene_symbols: bool = True, gene_symbol_col: str = "gene_symbol",
-    cmap: str = "viridis", vmin=None, vmax=None, save_dir: str | None = None,
-    fig_root_name: str | None = "markers", dpi: int = 150
-):
-    """For each cell type, plot feature plots for its markers on a fixed grid."""
-    # ... (function body is unchanged) ...
+    adata: AnnData,
+    markers_by_celltype: dict,
+    basis: str = "umap",
+    ncols: int = 4,
+    point_size: float = 5,
+    use_gene_symbols: bool = True,
+    gene_symbol_col: str = "gene_symbol",
+    cmap: str = "viridis",
+    vmin=None,
+    vmax=None,
+    save_dir: str | None = None,
+    fig_root_name: str | None = "markers",
+    dpi: int = 150,
+    combine_figures: bool = False, # <-- NEW PARAMETER
+) -> None:
+    """
+    For each cell type, plot UMAP feature plots for its markers.
+
+    Can save plots as one image per cell type or a single combined image.
+
+    Args:
+        adata: The AnnData object.
+        markers_by_celltype: Dictionary where keys are cell types and values are lists of marker genes.
+        basis: The embedding to use (e.g., 'umap').
+        ncols: Number of columns for the marker grid.
+        point_size: Size of points in the scatter plots.
+        use_gene_symbols: Whether to use gene symbols from `gene_symbol_col`.
+        gene_symbol_col: Column in `adata.var` containing gene symbols.
+        cmap: Colormap for expression.
+        vmin: Minimum value for the color scale.
+        vmax: Maximum value for the color scale.
+        save_dir: Directory to save the output files.
+        fig_root_name: A prefix for the output filenames.
+        dpi: Resolution for saved figures.
+        combine_figures: If True, save all cell type plots into a single, tall image.
+                         If False (default), save one image per cell type.
+    """
     if use_gene_symbols and gene_symbol_col not in adata.var.columns:
-        raise ValueError(f"adata.var lacks '{gene_symbol_col}'.")
+        raise ValueError(f"adata.var lacks '{gene_symbol_col}'. Cannot use gene symbols.")
+    if not markers_by_celltype:
+        print("Warning: markers_by_celltype dictionary is empty. No plots will be generated.")
+        return
 
-    max_k = max(len(v) for v in markers_by_celltype.values()) if markers_by_celltype else 0
-    if max_k == 0: return
-    nrows = int(np.ceil(max_k / ncols))
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
 
-    for cell_type in sorted(markers_by_celltype.keys()):
-        genes = list(markers_by_celltype[cell_type])
-        fig, axs = plt.subplots(nrows, ncols, figsize=(3.2 * ncols, 3.2 * nrows), constrained_layout=True)
-        axs = np.array(axs).flatten()
-        for i, ax in enumerate(axs):
-            if i < len(genes):
-                sc.pl.embedding(adata, basis=basis, color=genes[i], gene_symbols=gene_symbol_col if use_gene_symbols else None,
-                                ax=ax, show=False, size=point_size, cmap=cmap, vmin=vmin, vmax=vmax, frameon=False)
-            else:
-                ax.axis("off")
-        fig.suptitle(str(cell_type), fontsize=14)
+    # --- NEW LOGIC FOR COMBINED FIGURE ---
+    if combine_figures:
+        total_rows = 0
+        for cell_type in sorted(markers_by_celltype.keys()):
+            num_markers = len(markers_by_celltype[cell_type])
+            total_rows += int(np.ceil(num_markers / ncols)) if num_markers > 0 else 0
+
+        if total_rows == 0:
+            print("No markers to plot in combined figure.")
+            return
+
+        fig_w = 3.2 * ncols
+        fig_h = 3.2 * total_rows  # Adjust height based on total rows
+        fig, all_axs = plt.subplots(total_rows, ncols, figsize=(fig_w, fig_h), constrained_layout=True)
+        all_axs = np.array(all_axs).flatten()
+        
+        current_ax_idx = 0
+        for cell_type in sorted(markers_by_celltype.keys()):
+            genes = list(markers_by_celltype[cell_type])
+            if not genes:
+                continue
+
+            num_cell_rows = int(np.ceil(len(genes) / ncols))
+            num_plots_for_cell = num_cell_rows * ncols
+            
+            # Add a title for this section
+            first_ax_pos = all_axs[current_ax_idx].get_position()
+            fig.text(
+                0.5, first_ax_pos.y1 + 0.01 / fig.get_figheight(), str(cell_type), 
+                ha='center', va='bottom', fontsize=16, weight='bold', transform=fig.transFigure
+            )
+
+            for i in range(num_plots_for_cell):
+                ax = all_axs[current_ax_idx + i]
+                if i < len(genes):
+                    g = genes[i]
+                    sc.pl.embedding(
+                        adata, basis=basis, color=g,
+                        gene_symbols=gene_symbol_col if use_gene_symbols else None,
+                        ax=ax, show=False, size=point_size, cmap=cmap,
+                        vmin=vmin, vmax=vmax, frameon=False, title=str(g)
+                    )
+                else:
+                    ax.axis("off")
+            current_ax_idx += num_plots_for_cell
+
         if save_dir:
-            import os
-            os.makedirs(save_dir, exist_ok=True)
-            out = os.path.join(save_dir, f"{fig_root_name}.{cell_type}.{basis}.png")
-            fig.savefig(out, dpi=dpi, bbox_inches="tight")
+            out_path = os.path.join(save_dir, f"{fig_root_name}.all_celltypes_combined.png")
+            print(f"Saving combined figure to: {out_path}")
+            fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
             plt.close(fig)
+        else:
+            plt.show()
+
+    # --- ORIGINAL LOGIC FOR SEPARATE FIGURES ---
+    else:
+        for cell_type in sorted(markers_by_celltype.keys()):
+            genes = list(markers_by_celltype[cell_type])
+            if not genes:
+                continue
+
+            nrows = int(np.ceil(len(genes) / ncols))
+            fig, axs = plt.subplots(nrows, ncols, figsize=(3.2 * ncols, 3.2 * nrows), constrained_layout=True)
+            axs = np.array(axs).flatten()
+
+            for i, ax in enumerate(axs):
+                if i < len(genes):
+                    g = genes[i]
+                    sc.pl.embedding(
+                        adata, basis=basis, color=g,
+                        gene_symbols=gene_symbol_col if use_gene_symbols else None,
+                        ax=ax, show=False, size=point_size, cmap=cmap,
+                        vmin=vmin, vmax=vmax, frameon=False, title=str(g)
+                    )
+                else:
+                    ax.axis("off")
+
+            fig.suptitle(str(cell_type), fontsize=14)
+            
+            if save_dir:
+                out_path = os.path.join(save_dir, f"{fig_root_name}.{cell_type}.{basis}.png")
+                fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+                plt.close(fig)
+            else:
+                plt.show()
 
 
 def plot_qc_metrics(
     adata: AnnData,
-    save_path: str | None = None,
+    save_prefix: str | None = None, # <-- Changed from save_path
     dpi: int = 150
 ) -> None:
-    """Generates and optionally saves a standard panel of QC plots."""
-    # ... (function body is unchanged) ...
+    """
+    Generates and optionally saves a standard panel of QC plots as separate files.
+
+    This function creates and saves two figures:
+    1. A multi-panel violin plot for key QC metrics.
+    2. A figure with two scatter plots:
+        - total_counts vs. n_genes_by_counts
+        - total_counts vs. pct_counts_mt
+
+    Args:
+        adata: An AnnData object with QC metrics calculated.
+        save_prefix: If provided, the plots will be saved with this prefix.
+                     E.g., a prefix of "results/my_qc" will create
+                     "results/my_qc_violins.png" and "results/my_qc_scatters.png".
+        dpi: The resolution for the saved figures.
+    """
     print(f"Generating QC plots for AnnData object with {adata.n_obs} cells.")
-    
+
     qc_metrics = [
         'n_genes_by_counts', 'total_counts', 'pct_counts_mt',
         'pct_counts_ribo', 'pct_counts_hb'
     ]
     available_metrics = [m for m in qc_metrics if m in adata.obs.columns]
 
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 5))
-    fig.suptitle('Quality Control Metrics', fontsize=16)
-
-    # Use a temporary AnnData view for the violin plot to avoid modifying the original
-    temp_adata_view = adata[:, :0].copy() # Create a view with 0 vars but all obs
-    temp_adata_view.obs = adata.obs
-    
-    sc.pl.violin(
-        temp_adata_view,
+    # --- 1. VIOLIN PLOTS ---
+    print("Generating violin plots...")
+    fig_violin = sc.pl.violin(
+        adata,
         keys=available_metrics,
         jitter=0.4,
         multi_panel=True,
         show=False,
-        ax=ax1
+        return_fig=True, # <-- Important: get the figure object back
     )
-    ax1.set_title("QC Metric Distributions")
-    
-    sc.pl.scatter(adata, x='total_counts', y='n_genes_by_counts', color='pct_counts_mt', ax=ax2, show=False)
-    ax2.set_title("Counts vs. Genes (color=MT%)")
+    fig_violin.suptitle("QC Metric Distributions", y=1.02)
 
-    sc.pl.scatter(adata, x='total_counts', y='pct_counts_mt', ax=ax3, show=False)
-    ax3.set_title("Counts vs. MT%")
+    if save_prefix:
+        violin_path = f"{save_prefix}_violins.png"
+        print(f"Saving violin plots to: {violin_path}")
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(violin_path) or '.', exist_ok=True)
+        fig_violin.savefig(violin_path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig_violin)
+    else:
+        plt.show()
 
-    fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-    
-    if save_path:
-        print(f"Saving QC plot to: {save_path}")
-        fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
-        plt.close(fig)
+
+    # --- 2. SCATTER PLOTS ---
+    print("Generating scatter plots...")
+    fig_scatter, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    fig_scatter.suptitle('QC Scatter Plots', fontsize=16)
+
+    sc.pl.scatter(
+        adata,
+        x='total_counts',
+        y='n_genes_by_counts',
+        color='pct_counts_mt',
+        ax=ax1,
+        show=False
+    )
+    ax1.set_title("Counts vs. Genes (color=MT%)")
+
+    sc.pl.scatter(
+        adata,
+        x='total_counts',
+        y='pct_counts_mt',
+        ax=ax2,
+        show=False
+    )
+    ax2.set_title("Counts vs. MT%")
+
+    fig_scatter.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+    if save_prefix:
+        scatter_path = f"{save_prefix}_scatters.png"
+        print(f"Saving scatter plots to: {scatter_path}")
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(scatter_path) or '.', exist_ok=True)
+        fig_scatter.savefig(scatter_path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig_scatter)
     else:
         plt.show()
 
