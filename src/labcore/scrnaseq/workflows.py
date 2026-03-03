@@ -63,48 +63,6 @@ def load_and_preprocess_from_manifest(
     print("Workflow complete. Final object shape:", adata_full.shape)
     return adata_full
 
-def preprocess_for_pca(
-    adata: AnnData,
-    n_top_genes: int = 3000,
-    regress_vars: list[str] | None = None,
-) -> AnnData:
-    """
-    Prepares an AnnData object for PCA by finding HVGs, regressing, and scaling.
-
-    This is the standard preprocessing pipeline applied to log-normalized data.
-
-    Args:
-        adata: Log-normalized AnnData object.
-        n_top_genes: Number of highly variable genes to select.
-        regress_vars: Optional list of variables in .obs to regress out.
-
-    Returns:
-        A new AnnData object subsetted to HVGs, with data regressed and scaled,
-        ready for sc.tl.pca.
-    """
-    print("\n--- Preprocessing for PCA ---")
-    
-    print("Finding highly variable genes...")
-    if 'counts' not in adata.layers:
-        raise ValueError("A 'counts' layer with raw counts is required for HVG selection.")
-    sc.pp.highly_variable_genes(
-        adata,
-        layer='counts',
-        n_top_genes=n_top_genes,
-        flavor='seurat_v3'
-    )
-
-    adata_hvg = adata[:, adata.var["highly_variable"]].copy()
-
-    if regress_vars:
-        print(f"Regressing out the following variables: {regress_vars}")
-        sc.pp.regress_out(adata_hvg, regress_vars)
-
-    print("Scaling data...")
-    sc.pp.scale(adata_hvg, max_value=10)
-    
-    return adata_hvg
-
 
 def run_downstream_analysis(
     adata_hvg: AnnData,

@@ -20,7 +20,10 @@ from .utils import (
 )
 
 # From workflows.py
-from .workflows import load_and_preprocess_from_manifest, preprocess_for_pca, run_downstream_analysis
+from .workflows import load_and_preprocess_from_manifest, run_downstream_analysis
+
+# From preprocessing.py
+from .preprocessing import score_cell_cycle, preprocess_for_pca
 
 # Define what 'from labcore.scrnaseq import *' will import
 __all__ = [
@@ -31,12 +34,13 @@ __all__ = [
     "is_outlier",
     "split_umap",
     "plot_umap_markers_per_celltype",
+    "plot_qc_metrics",
+    "score_cell_cycle",          # <-- New location reflected
+    "preprocess_for_pca",        # <-- New location reflected
     "attach_gene_symbols",
     "map_markers_to_ids",
     "markers_df_to_dict",
     "adata_status",
     "load_and_preprocess_from_manifest",
-    "plot_qc_metrics",
-    "preprocess_for_pca",
     "run_downstream_analysis",
 ]
