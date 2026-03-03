@@ -1,5 +1,6 @@
 import scanpy as sc
 from anndata import AnnData
+import pandas as pd # <-- Make sure pandas is imported
 
 def score_cell_cycle(
     adata: AnnData,
@@ -10,8 +11,9 @@ def score_cell_cycle(
     """
     Scores cells for cell cycle phases (S and G2/M) using gene symbols.
 
-    This function temporarily sets the AnnData index to the gene symbol column
-    to run scanpy's `score_genes_cell_cycle`, then restores the original index.
+    This function robustly finds the intersection of the provided marker gene
+    lists with the genes actually present in the AnnData object and performs
+    scoring without modifying the AnnData index.
 
     Args:
         adata: The AnnData object (should be log-normalized).
@@ -24,38 +26,51 @@ def score_cell_cycle(
         and 'phase' columns in `.obs`.
     """
     if gene_symbol_col not in adata.var.columns:
-        raise ValueError(
-            f"Column '{gene_symbol_col}' not found in adata.var. "
-            "Cannot score cell cycle without gene symbols."
-        )
+        raise ValueError(f"Column '{gene_symbol_col}' not found in adata.var.")
 
     print("Scoring cell cycle phases...")
 
-    # Store the original index
-    original_var_names = adata.var_names.copy()
-    
-    # Temporarily set the index to gene symbols for scoring
-    # Make sure the symbols are unique before setting as index
-    if not adata.var[gene_symbol_col].is_unique:
-        print("Warning: Gene symbols are not unique. Making them unique for scoring.")
-        adata.var_names = adata.var[gene_symbol_col].astype(str) + "-" + adata.var.index.astype(str)
-    else:
-        adata.var_names = adata.var[gene_symbol_col].astype(str)
+    # --- FINAL, ROBUST LOGIC ---
+    # Create a mapping from UPPERCASE gene symbols to their original index positions
+    gene_symbol_map = {
+        symbol.upper(): i
+        for i, symbol in enumerate(adata.var[gene_symbol_col].astype(str))
+    }
+
+    # Find the index positions of the cell cycle genes that exist in our data
+    s_genes_idx = [gene_symbol_map[g.upper()] for g in s_genes if g.upper() in gene_symbol_map]
+    g2m_genes_idx = [gene_symbol_map[g.upper()] for g in g2m_genes if g.upper() in gene_symbol_map]
+
+    print(f"Found {len(s_genes_idx)}/{len(s_genes)} S-phase genes in data.")
+    print(f"Found {len(g2m_genes_idx)}/{len(g2m_genes)} G2/M-phase genes in data.")
+
+    if not s_genes_idx or not g2m_genes_idx:
+        raise ValueError("Not enough cell cycle genes were found in the data to proceed with scoring.")
+
+    # Calculate the mean expression of the gene sets for each cell
+    s_score = adata.X[:, s_genes_idx].mean(axis=1)
+    g2m_score = adata.X[:, g2m_genes_idx].mean(axis=1)
+
+    # Convert to numpy arrays if they are sparse matrices
+    if hasattr(s_score, 'A'): s_score = s_score.A.flatten()
+    if hasattr(g2m_score, 'A'): g2m_score = g2m_score.A.flatten()
         
-    # Run the scoring function
-    sc.tl.score_genes_cell_cycle(
-        adata,
-        s_genes=s_genes,
-        g2m_genes=g2m_genes
-    )
+    # Assign scores to .obs
+    adata.obs['S_score'] = s_score
+    adata.obs['G2M_score'] = g2m_score
+
+    # Assign phase based on which score is higher
+    phase = pd.Series('S', index=adata.obs.index)
+    phase[adata.obs['G2M_score'] > adata.obs['S_score']] = 'G2M'
     
-    # --- IMPORTANT: Restore the original index ---
-    adata.var_names = original_var_names
+    # Define a threshold for 'G1' phase
+    # This is a simple heuristic; a more complex one could be used
+    g1_threshold = 0.0
+    phase[(adata.obs['S_score'] <= g1_threshold) & (adata.obs['G2M_score'] <= g1_threshold)] = 'G1'
     
-    # It's good practice to make the 'phase' column categorical
-    adata.obs['phase'] = adata.obs['phase'].astype('category')
+    adata.obs['phase'] = pd.Categorical(phase)
     
-    print("Cell cycle scoring complete. Added 'S_score', 'G2M_score', and 'phase' to .obs.")
+    print("Cell cycle scoring complete.")
     return adata
 
 
