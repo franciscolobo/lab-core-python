@@ -110,11 +110,17 @@ def run_standard_analysis(
         adata,
         flavor="seurat_v3",
         n_top_genes=n_top_genes,
-        layer="counts",  # <--- ADD THIS ARGUMENT
+        layer="counts",
     )
  
     adata_hvg = adata[:, adata.var["highly_variable"]].copy()
+    
+    if regress_vars:
+        print(f"Regressing out the following variables: {regress_vars}")
+        sc.pp.regress_out(adata_hvg, regress_vars)
+
     sc.pp.scale(adata_hvg, max_value=10)
+
     sc.tl.pca(adata_hvg, n_comps=n_pcs, svd_solver="arpack")
     
     # If the requested representation doesn't exist on the HVG object (e.g. Harmony),
