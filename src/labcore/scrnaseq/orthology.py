@@ -1,4 +1,12 @@
-# In src/labcore/scrnaseq/orthology.py
+from gprofiler import GProfiler
+import pandas as pd
+
+ORGANISM_ALIASES = {
+    "human": "hsapiens",
+    "mouse": "mmusculus",
+    "chicken": "ggallus",
+    # Add other species as needed
+}
 
 def get_orthologs(
     gene_list: list[str],
