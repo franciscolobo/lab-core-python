@@ -1,17 +1,5 @@
 # In src/labcore/scrnaseq/orthology.py
 
-from gprofiler import GProfiler
-import pandas as pd
-
-# --- THIS IS THE FIX ---
-# Add the dictionary definition back into the file.
-ORGANISM_ALIASES = {
-    "human": "hsapiens",
-    "mouse": "mmusculus",
-    "chicken": "ggallus",
-    # Add other species as needed
-}
-
 def get_orthologs(
     gene_list: list[str],
     target_species: str,
@@ -44,7 +32,9 @@ def get_orthologs(
         print("Warning: g:Profiler returned no orthologs.")
         return {}
     
-    required_cols = {'incoming_gene_name', 'name', 'n_incoming'}
+    # --- THIS IS THE FIX ---
+    # The source column is 'incoming' and the target symbol column is 'name'.
+    required_cols = {'incoming', 'name', 'n_incoming'}
     if not required_cols.issubset(ortholog_df.columns):
         print("g:Profiler response is missing expected columns. Columns found:", ortholog_df.columns.tolist())
         print("DataFrame head:\n", ortholog_df.head())
@@ -55,8 +45,8 @@ def get_orthologs(
         ortholog_df
         .dropna(subset=['name'])
         .loc[ortholog_df['n_incoming'] == 1]
-        .drop_duplicates(subset=['incoming_gene_name'])
-        .set_index('incoming_gene_name')['name']
+        .drop_duplicates(subset=['incoming']) # <-- Use correct source column
+        .set_index('incoming')['name']       # <-- Use correct source and target columns
         .to_dict()
     )
     
