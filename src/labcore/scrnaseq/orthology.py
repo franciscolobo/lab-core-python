@@ -1,7 +1,16 @@
+# In src/labcore/scrnaseq/orthology.py
+
 from gprofiler import GProfiler
 import pandas as pd
 
-# (ORGANISM_ALIASES dictionary is unchanged)
+# --- THIS IS THE FIX ---
+# Add the dictionary definition back into the file.
+ORGANISM_ALIASES = {
+    "human": "hsapiens",
+    "mouse": "mmusculus",
+    "chicken": "ggallus",
+    # Add other species as needed
+}
 
 def get_orthologs(
     gene_list: list[str],
@@ -34,10 +43,6 @@ def get_orthologs(
     if ortholog_df.empty:
         print("Warning: g:Profiler returned no orthologs.")
         return {}
-
-    # --- THIS IS THE FIX ---
-    # The column for the ortholog's name is 'name', not 'ortholog_name'.
-    # We will also add a check to make sure the expected columns exist.
     
     required_cols = {'incoming_gene_name', 'name', 'n_incoming'}
     if not required_cols.issubset(ortholog_df.columns):
@@ -48,13 +53,14 @@ def get_orthologs(
     # Filter for best one-to-one orthologs and create the mapping dictionary
     ortholog_map = (
         ortholog_df
-        .dropna(subset=['name'])  # <-- Corrected column name
+        .dropna(subset=['name'])
         .loc[ortholog_df['n_incoming'] == 1]
         .drop_duplicates(subset=['incoming_gene_name'])
-        .set_index('incoming_gene_name')['name']  # <-- Corrected column name
+        .set_index('incoming_gene_name')['name']
         .to_dict()
     )
     
     print(f"Found {len(ortholog_map)} one-to-one orthologs.")
     
     return ortholog_map
+
