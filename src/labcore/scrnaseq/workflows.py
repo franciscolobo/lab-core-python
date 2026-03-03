@@ -69,7 +69,8 @@ def run_standard_analysis(
     use_rep: str = "X_pca",
     n_top_genes: int = 3000,
     n_pcs: int = 30,
-    n_neighbors: int = 15
+    n_neighbors: int = 15,
+    regress_vars: list[str] | None = None
 ) -> AnnData:
     """
     Runs a standard Scanpy analysis workflow on a given representation.
