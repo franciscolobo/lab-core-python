@@ -20,8 +20,7 @@ from .utils import (
 )
 
 # From workflows.py
-from .workflows import load_and_preprocess_from_manifest, run_standard_analysis
-
+from .workflows import load_and_preprocess_from_manifest, preprocess_for_pca, run_downstream_analysis
 
 # Define what 'from labcore.scrnaseq import *' will import
 __all__ = [
@@ -38,5 +37,6 @@ __all__ = [
     "adata_status",
     "load_and_preprocess_from_manifest",
     "plot_qc_metrics",
-    "run_standard_analysis",
+    "preprocess_for_pca",
+    "run_downstream_analysis",
 ]

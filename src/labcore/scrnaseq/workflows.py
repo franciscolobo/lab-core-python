@@ -55,7 +55,6 @@ def load_and_preprocess_from_manifest(
         index_unique="-",
     )
 
-    # --- THIS IS THE SECOND, CRITICAL FIX ---
     # Ensure final object has a clean gene symbol column using the same, correct logic
     ids = pd.Index(adata_full.var_names.astype(str))
     mapped_symbols_full = pd.Series(ids.map(gene_map), index=ids)
@@ -64,90 +63,81 @@ def load_and_preprocess_from_manifest(
     print("Workflow complete. Final object shape:", adata_full.shape)
     return adata_full
 
-def run_standard_analysis(
+def preprocess_for_pca(
     adata: AnnData,
-    use_rep: str = "X_pca",
     n_top_genes: int = 3000,
-    n_pcs: int = 30,
-    n_neighbors: int = 15,
-    regress_vars: list[str] | None = None
+    regress_vars: list[str] | None = None,
 ) -> AnnData:
     """
-    Runs a standard Scanpy analysis workflow on a given representation.
+    Prepares an AnnData object for PCA by finding HVGs, regressing, and scaling.
 
-    This workflow performs:
-    1. Finds highly variable genes.
-    2. Subsets to HVGs, scales, and runs PCA.
-    3. Computes neighbors and UMAP using the specified representation (`use_rep`).
-    4. Clusters with Leiden.
-    5. Transfers the new `obsm`, `obsp`, and `obs` data back to the full AnnData object.
+    This is the standard preprocessing pipeline applied to log-normalized data.
 
     Args:
-        adata: The full AnnData object.
-        use_rep: The representation to use for neighbor calculation. 
-                 Typically 'X_pca' for no integration or 'X_pca_harmony' for
-                 Harmony-integrated analysis.
+        adata: Log-normalized AnnData object.
         n_top_genes: Number of highly variable genes to select.
-        n_pcs: Number of principal components to compute.
-        n_neighbors: Number of neighbors for the UMAP graph.
-    
-    Returns:
-        The input AnnData object, updated with analysis results.
-    """
-    print(f"\n--- Running standard analysis using '{use_rep}' ---")
-    
-    # Store raw counts if not already present
-    if "counts" not in adata.layers:
-        adata.layers["counts"] = adata.X.copy()
-    
-    # Normalize and log-transform
-    sc.pp.normalize_total(adata, target_sum=1e4)
-    sc.pp.log1p(adata)
-    adata.raw = adata.copy()
+        regress_vars: Optional list of variables in .obs to regress out.
 
-    # Find HVGs
-    print("Finding highly variable genes using raw counts...")
+    Returns:
+        A new AnnData object subsetted to HVGs, with data regressed and scaled,
+        ready for sc.tl.pca.
+    """
+    print("\n--- Preprocessing for PCA ---")
+    
+    print("Finding highly variable genes...")
+    if 'counts' not in adata.layers:
+        raise ValueError("A 'counts' layer with raw counts is required for HVG selection.")
     sc.pp.highly_variable_genes(
         adata,
-        flavor="seurat_v3",
+        layer='counts',
         n_top_genes=n_top_genes,
-        layer="counts",
+        flavor='seurat_v3'
     )
- 
+
     adata_hvg = adata[:, adata.var["highly_variable"]].copy()
-    
+
     if regress_vars:
         print(f"Regressing out the following variables: {regress_vars}")
         sc.pp.regress_out(adata_hvg, regress_vars)
 
+    print("Scaling data...")
     sc.pp.scale(adata_hvg, max_value=10)
-
-    sc.tl.pca(adata_hvg, n_comps=n_pcs, svd_solver="arpack")
     
-    # If the requested representation doesn't exist on the HVG object (e.g. Harmony),
-    # copy it from the full object.
-    if use_rep not in adata_hvg.obsm:
-        if use_rep in adata.obsm:
-            print(f"Copying '{use_rep}' from full AnnData object to HVG subset.")
-            adata_hvg.obsm[use_rep] = adata.obsm[use_rep]
-        else:
-            raise KeyError(f"Representation '{use_rep}' not found in adata.obsm. Run integration first.")
+    return adata_hvg
 
-    # Compute neighbors and UMAP on the specified representation
+
+def run_downstream_analysis(
+    adata_hvg: AnnData,
+    full_adata: AnnData,
+    use_rep: str = "X_pca",
+    n_pcs: int = 30,
+    n_neighbors: int = 15,
+) -> AnnData:
+    """
+    Runs downstream analysis (neighbors, UMAP, Leiden) and transfers results.
+
+    Args:
+        adata_hvg: The AnnData object subsetted to HVGs, with PCA/Harmony run.
+        full_adata: The original, full AnnData object to transfer results to.
+        use_rep: The representation to use for neighbor calculation (e.g., 'X_pca').
+        n_pcs: Number of PCs to use for neighbor calculation.
+        n_neighbors: Number of neighbors for the UMAP graph.
+
+    Returns:
+        The full AnnData object, updated with analysis results.
+    """
+    print(f"\n--- Running downstream analysis using '{use_rep}' ---")
+    
+    print(f"Computing neighbors with {n_neighbors} neighbors and {n_pcs} PCs...")
     sc.pp.neighbors(adata_hvg, n_neighbors=n_neighbors, n_pcs=n_pcs, use_rep=use_rep)
     sc.tl.umap(adata_hvg, min_dist=0.3)
     sc.tl.leiden(adata_hvg, resolution=0.5)
 
-    # Transfer results from the HVG object back to the main adata object
     print("Transferring analysis results back to the main AnnData object.")
-    adata.obsm["X_pca"] = adata_hvg.obsm["X_pca"]
-    adata.obsm["X_umap"] = adata_hvg.obsm["X_umap"]
-    if "X_pca_harmony" in adata_hvg.obsm:
-        adata.obsm["X_pca_harmony"] = adata_hvg.obsm["X_pca_harmony"]
-    
-    adata.obsp["connectivities"] = adata_hvg.obsp["connectivities"]
-    adata.obsp["distances"] = adata_hvg.obsp["distances"]
-    adata.obs["leiden"] = adata_hvg.obs["leiden"].astype("category")
+    full_adata.obsm[use_rep] = adata_hvg.obsm[use_rep]
+    full_adata.obsm["X_umap"] = adata_hvg.obsm["X_umap"]
+    full_adata.obsp["connectivities"] = adata_hvg.obsp["connectivities"]
+    full_adata.obsp["distances"] = adata_hvg.obsp["distances"]
+    full_adata.obs["leiden"] = adata_hvg.obs["leiden"].astype("category")
 
-    print("--- Analysis complete ---")
-    return adata
+    return full_adata
