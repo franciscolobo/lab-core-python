@@ -244,3 +244,73 @@ def plot_qc_metrics(
     else:
         plt.show()
 
+
+def plot_umap_grid(
+    adata: AnnData,
+    color_keys: list[str],
+    ncols: int = 2,
+    point_size: float = 20,
+    wspace: float = 0.4,
+    **kwargs
+) -> plt.Figure:
+    """
+    Plots multiple UMAPs in a clean, square-aspected grid.
+    ... (docstring is unchanged) ...
+    """
+    n_plots = len(color_keys)
+    nrows = int(np.ceil(n_plots / ncols))
+    
+    fig, axs = plt.subplots(
+        nrows, ncols, 
+        figsize=(6 * ncols, 6 * nrows), # Use a square-ish size per plot
+    )
+    
+    axs = np.array(axs).flatten()
+
+    # --- THIS IS THE NEW, ROBUST FIX FOR SQUARE PLOTS ---
+    # 1. Get the global limits of the UMAP embedding
+    umap_coords = adata.obsm['X_umap']
+    x_min, y_min = umap_coords.min(axis=0)
+    x_max, y_max = umap_coords.max(axis=0)
+
+    # 2. Calculate the range and center, then find the max range
+    x_range = x_max - x_min
+    y_range = y_max - y_min
+    max_range = max(x_range, y_range)
+    
+    x_center = (x_max + x_min) / 2
+    y_center = (y_max + y_min) / 2
+
+    # 3. Define the new, square limits centered on the data
+    x_lim = [x_center - max_range * 0.55, x_center + max_range * 0.55]
+    y_lim = [y_center - max_range * 0.55, y_center + max_range * 0.55]
+    # The 0.55 factor adds a little padding around the edges
+
+    for i, key in enumerate(color_keys):
+        ax = axs[i]
+        
+        sc.pl.umap(
+            adata,
+            color=key,
+            ax=ax,
+            show=False,
+            size=point_size,
+            title=key,
+            **kwargs
+        )
+        
+        # 4. Forcefully apply the calculated square limits to each subplot
+        ax.set_xlim(x_lim)
+        ax.set_ylim(y_lim)
+        
+        # This is a final enforcement, which should now work as intended
+        ax.set_aspect('equal')
+
+    # Turn off any unused axes
+    for i in range(n_plots, len(axs)):
+        axs[i].axis('off')
+
+    fig.subplots_adjust(wspace=wspace)
+
+    return fig
+
