@@ -343,7 +343,7 @@ def plot_grouped_violin(
             print(f"Warning: Metric '{metric}' not found in adata.obs. Skipping.")
             continue
 
-        fig, ax = plt.subplots(figsize=(max(5, 0.5 * adata.obs[group_by].nunique()), 6))
+        fig, ax = plt.subplots(figsize=(max(8, 0.5 * adata.obs[group_by].nunique()), 6))
 
         # Use seaborn directly for more control
         sns.violinplot(
@@ -366,11 +366,11 @@ def plot_grouped_violin(
             medians = adata.obs.groupby(group_by, observed=True)[metric].median()
             for i, cat in enumerate(medians.index):
                 # Draw line for the median
-                ax.hlines(medians[cat], i - 0.4, i + 0.4, color='red', lw=1.5)
+                ax.hlines(medians[cat], i - 0.4, i + 0.4, color='red', lw=1)
                 # Add text for the median value
                 ax.text(i, medians[cat], f'{medians[cat]:.2f}',
                         ha='center', va='bottom', color='white',
-                        bbox=dict(facecolor='red', alpha=0.8, boxstyle='round,pad=0.1'))
+                        bbox=dict(facecolor='red', alpha=0.9, boxstyle='round,pad=0.1'))
 
         ax.set_title(f'Distribution of {metric} by {group_by}')
         ax.tick_params(axis='x', rotation=90)
@@ -384,4 +384,42 @@ def plot_grouped_violin(
             plt.close(fig)
         else:
             plt.show()
+
+def plot_rank_genes_groups(
+    adata: AnnData,
+    gene_symbol_col: str = "gene_symbol",
+    **kwargs
+) -> None:
+    """
+    A wrapper for sc.pl.rank_genes_groups that ensures gene symbols are used
+    for plotting instead of Ensembl IDs.
+
+    This function creates a temporary AnnData object with gene symbols as
+    the index to generate the plot, leaving the original object unmodified.
+
+    Args:
+        adata: The AnnData object with `rank_genes_groups` results.
+        gene_symbol_col: The column in `adata.var` that contains the gene symbols.
+        **kwargs: Additional keyword arguments to be passed directly to
+                  `sc.pl.rank_genes_groups` (e.g., `n_genes`, `sharey`).
+    """
+    if gene_symbol_col not in adata.var.columns:
+        raise ValueError(
+            f"Column '{gene_symbol_col}' not found in adata.var. "
+            "Cannot plot with gene symbols."
+        )
+
+    # Create a temporary AnnData object for plotting
+    adata_for_plot = adata.copy()
+
+    # Set the index to the gene symbols
+    adata_for_plot.var_names = adata_for_plot.var[gene_symbol_col].astype(str)
+
+    # It's crucial that the index is unique for plotting.
+    # Scanpy's plotting functions often fail with non-unique indices.
+    adata_for_plot.var_names_make_unique()
+
+    # Now, call the plotting function on this temporary object
+    print("Generating rank_genes_groups plot with gene symbols...")
+    sc.pl.rank_genes_groups(adata_for_plot, **kwargs)
 

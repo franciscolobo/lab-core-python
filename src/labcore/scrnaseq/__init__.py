@@ -9,7 +9,7 @@ from .io import read_cellbender_matrix_h5, build_gene_map_from_h5_paths
 from .qc import preprocess_sample, filter_outlier_cells, is_outlier
 
 # From plotting.py
-from .plotting import split_umap, plot_umap_markers_per_celltype, plot_qc_metrics, plot_umap_grid
+from .plotting import split_umap, plot_umap_markers_per_celltype, plot_grouped_violin, plot_qc_metrics, plot_umap_grid, plot_rank_genes_groups
 
 # From utils.py
 from .utils import (
@@ -39,6 +39,8 @@ __all__ = [
     "plot_qc_metrics",
     "plot_umap_grid",
     "score_cell_cycle",
+    "plot_grouped_violin",
+    "plot_rank_genes_groups",
     "preprocess_for_pca",
     "attach_gene_symbols",
     "map_markers_to_ids",
