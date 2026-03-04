@@ -5,17 +5,41 @@ import scanpy as sc
 from anndata import AnnData
 
 from .io import read_cellbender_matrix_h5, build_gene_map_from_h5_paths
-from .qc import preprocess_sample
+from .qc import preprocess_sample, filter_outlier_cells
 
 def load_and_preprocess_from_manifest(
     manifest_path: str,
     sample_id_col: str = "SampleID",
     path_col: str = "SamplePath",
+    filter_outliers_nmads: float | None = None, # <-- NEW PARAMETER
     **preprocess_kwargs
 ) -> AnnData:
     """
-    Loads and preprocesses scRNA-Seq data from a manifest file.
-    ... (docstring is unchanged) ...
+        Loads and preprocesses scRNA-Seq data from a manifest file.
+
+    This workflow performs the following steps:
+    1. Reads a sample manifest TSV/CSV file.
+    2. Builds a comprehensive gene ID-to-symbol map from all H5 files.
+    3. Iterates through each sample, loading the CellBender data.
+    4. Attaches gene symbols and sample metadata.
+    5. Runs the 'preprocess_sample' function on each sample with provided arguments.
+    6. Concatenates all processed samples into a single AnnData object.
+
+    Args:
+        manifest_path: Path to the sample manifest file.
+        sample_id_col: Name of the column in the manifest containing unique sample IDs.
+        path_col: Name of the column containing the path to each sample's H5 file.
+        filter_outliers_nmads: If set to a float (e.g., 3.0), robust outlier
+                               detection will be run on each sample individually
+                               before concatenation, using the specified number
+                               of MADs as the threshold.
+
+        **preprocess_kwargs: Keyword arguments to be passed directly to the
+                             `labcore.scrnaseq.preprocess_sample` function
+                             (e.g., `mito_genes`, `max_pct_mito`).
+
+    Returns:
+        A single, concatenated AnnData object containing all preprocessed samples.
     """
     print(f"Reading manifest from: {manifest_path}")
     df = pd.read_csv(manifest_path, sep="\t")
@@ -42,6 +66,19 @@ def load_and_preprocess_from_manifest(
 
         adata_processed = preprocess_sample(adata, sample_meta=sample_meta, **preprocess_kwargs)
         adatas.append(adata_processed)
+        if filter_outliers_nmads:
+            print(f"  -> Running robust outlier detection (NMADs={filter_outliers_nmads})...")
+            # We use the existing filter function on this single-sample object.
+            # The library_key is the sample_id_col, which will only have one group.
+            adata_filtered = filter_outlier_cells(
+                adata=adata_processed,
+                library_key=sample_id_col,
+                qc_metrics=['log1p_n_genes_by_counts', 'log1p_total_counts', 'pct_counts_mt'],
+                nmads=filter_outliers_nmads
+            )
+            adatas.append(adata_filtered)
+        else:
+            adatas.append(adata_processed)
 
     print("\nConcatenating all samples...")
     if not adatas:
