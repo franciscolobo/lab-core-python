@@ -1,13 +1,10 @@
-# In src/labcore/scrnaseq/plotting.py
-
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import scanpy as sc
 from anndata import AnnData
 import os
-
-# I've also added the 'AnnData' type hint to the other functions for consistency.
+import seaborn as sns
 
 def split_umap(
     adata: AnnData, split_by: str, ncol: int = 2, nrow: int = None,
@@ -313,4 +310,78 @@ def plot_umap_grid(
     fig.subplots_adjust(wspace=wspace)
 
     return fig
+
+
+def plot_grouped_violin(
+    adata: AnnData,
+    metrics: list[str],
+    group_by: str,
+    stripplot: bool = True,
+    show_median: bool = False,
+    save_prefix: str | None = None,
+    dpi: int = 150
+) -> None:
+    """
+    Generates violin plots for multiple QC metrics, grouped by a category.
+
+    This provides more customization than the default scanpy plot, including
+    showing median values.
+
+    Args:
+        adata: An AnnData object with QC metrics calculated.
+        metrics: List of metric columns in .obs to plot (e.g., ['pct_counts_mt']).
+        group_by: Column in .obs to group by (e.g., 'SampleID').
+        stripplot: If False, do not plot individual data points (the dots).
+        show_median: If True, draw a line for the median and print its value.
+        save_prefix: If provided, the plots will be saved with this prefix.
+        dpi: The resolution for saved figures.
+    """
+    print("Generating grouped violin plots...")
+
+    for metric in metrics:
+        if metric not in adata.obs.columns:
+            print(f"Warning: Metric '{metric}' not found in adata.obs. Skipping.")
+            continue
+
+        fig, ax = plt.subplots(figsize=(max(5, 0.5 * adata.obs[group_by].nunique()), 6))
+
+        # Use seaborn directly for more control
+        sns.violinplot(
+            x=group_by,
+            y=metric,
+            data=adata.obs,
+            ax=ax,
+            inner=None, # We control the inner elements manually
+            cut=0,
+        )
+
+        if stripplot:
+            sns.stripplot(
+                x=group_by, y=metric, data=adata.obs,
+                ax=ax, jitter=0.4, color='black', size=1.5, alpha=0.3
+            )
+
+        if show_median:
+            # Calculate and plot medians
+            medians = adata.obs.groupby(group_by, observed=True)[metric].median()
+            for i, cat in enumerate(medians.index):
+                # Draw line for the median
+                ax.hlines(medians[cat], i - 0.4, i + 0.4, color='red', lw=1.5)
+                # Add text for the median value
+                ax.text(i, medians[cat], f'{medians[cat]:.2f}',
+                        ha='center', va='bottom', color='white',
+                        bbox=dict(facecolor='red', alpha=0.8, boxstyle='round,pad=0.1'))
+
+        ax.set_title(f'Distribution of {metric} by {group_by}')
+        ax.tick_params(axis='x', rotation=90)
+        fig.tight_layout()
+
+        if save_prefix:
+            out_path = f"{save_prefix}_{metric}_by_{group_by}.png"
+            print(f"Saving plot to: {out_path}")
+            os.makedirs(os.path.dirname(out_path) or '.', exist_ok=True)
+            fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+            plt.close(fig)
+        else:
+            plt.show()
 
