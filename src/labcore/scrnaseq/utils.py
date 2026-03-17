@@ -92,31 +92,29 @@ def set_rank_genes_symbols(
 
     print("Update complete.")
 
-
-# In src/labcore/scrnaseq/utils.py
-
 def rank_genes_groups_df(
     adata: AnnData,
-    group: str | None = None
+    group: str | None = None,
+    gene_symbol_col: str = "gene_symbol"
 ) -> pd.DataFrame:
     """
-    Converts the output of sc.tl.rank_genes_groups into a tidy pandas DataFrame.
+    Converts the output of sc.tl.rank_genes_groups into a tidy pandas DataFrame,
+    automatically including gene symbols if available.
 
     Args:
         adata: The AnnData object with `rank_genes_groups` results.
         group: The specific group (e.g., a cluster ID) to retrieve results for.
                If None, results for all groups are concatenated.
+        gene_symbol_col: The column in `adata.var` that contains the gene symbols.
 
     Returns:
-        A pandas DataFrame with the DGE results.
+        A pandas DataFrame with the DGE results, including a gene symbol column.
     """
+    if 'rank_genes_groups' not in adata.uns:
+        raise ValueError("Please run `sc.tl.rank_genes_groups` before calling this function.")
+
     results = adata.uns['rank_genes_groups']
-
-    # Get the field names (e.g., 'names', 'pvals_adj', 'logfoldchanges')
-    fields = list(results.keys())
-
-    # Remove fields that are not per-gene (like 'params')
-    fields = [f for f in fields if f != 'params']
+    fields = [f for f in list(results.keys()) if f != 'params']
 
     if group:
         if group not in results[fields[0]].dtype.names:
@@ -127,7 +125,6 @@ def rank_genes_groups_df(
 
     all_dfs = []
     for g in groups:
-        # Create a dictionary for the current group's data
         group_data = {field: results[field][g] for field in fields}
         df = pd.DataFrame(group_data)
         df['group'] = g
@@ -135,8 +132,22 @@ def rank_genes_groups_df(
 
     final_df = pd.concat(all_dfs, ignore_index=True)
 
-    # Reorder columns for clarity
-    col_order = ['group', 'names', 'logfoldchanges', 'pvals', 'pvals_adj', 'scores']
-    final_df = final_df[[c for c in col_order if c in final_df.columns]]
+    # --- NEW LOGIC TO AUTOMATICALLY ADD GENE SYMBOLS ---
+    if gene_symbol_col in adata.var.columns:
+        print(f"Adding gene symbols from column: '{gene_symbol_col}'")
+        # Create a mapping from Ensembl ID (the 'names' column) to symbol
+        id_to_symbol_map = adata.var[gene_symbol_col]
+        final_df['gene_symbol'] = final_df['names'].map(id_to_symbol_map)
+
+        # Reorder columns for clarity
+        col_order = ['group', 'gene_symbol', 'names', 'logfoldchanges', 'pvals', 'pvals_adj', 'scores']
+        # Filter for columns that actually exist in the dataframe
+        final_df = final_df[[c for c in col_order if c in final_df.columns]]
+    else:
+        print(f"Warning: Gene symbol column '{gene_symbol_col}' not found. Returning table with IDs only.")
+        # Reorder columns without symbols
+        col_order = ['group', 'names', 'logfoldchanges', 'pvals', 'pvals_adj', 'scores']
+        final_df = final_df[[c for c in col_order if c in final_df.columns]]
 
     return final_df
+
