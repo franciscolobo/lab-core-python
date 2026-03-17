@@ -3,6 +3,7 @@
 import pandas as pd
 import numpy as np
 import scipy.sparse as sp
+from anndata import AnnData 
 
 def attach_gene_symbols(adata_obj, gene_map, col="gene_symbol"):
     """Attach a gene_symbol column to adata_obj.var using var_names (gene IDs) as keys."""
@@ -45,3 +46,97 @@ def adata_status(adata, counts_layer="counts"):
     print(f"obsp keys: {list(adata.obsp.keys())}")
     if adata.raw: print(f"raw: present, with {adata.raw.n_vars:,} vars")
 
+def set_rank_genes_symbols(
+    adata: AnnData,
+    gene_symbol_col: str = "gene_symbol"
+) -> None:
+    """
+    Modifies the `adata.uns['rank_genes_groups']` result in place to use
+    gene symbols instead of Ensembl IDs in the 'names' field.
+
+    This is necessary for plotting functions like `sc.pl.rank_genes_groups`
+    to display human-readable gene names.
+
+    Args:
+        adata: The AnnData object after running `sc.tl.rank_genes_groups`.
+        gene_symbol_col: The column in `adata.var` that contains the gene symbols.
+    """
+    if 'rank_genes_groups' not in adata.uns:
+        raise ValueError("Please run `sc.tl.rank_genes_groups` before calling this function.")
+    if gene_symbol_col not in adata.var.columns:
+        raise ValueError(f"Column '{gene_symbol_col}' not found in adata.var.")
+
+    print("Replacing Ensembl IDs with gene symbols in `rank_genes_groups` results...")
+
+    # Create a mapping from Ensembl ID (the index) to the gene symbol
+    id_to_symbol_map = pd.Series(
+        adata.var[gene_symbol_col].values,
+        index=adata.var_names
+    ).to_dict()
+
+    # The 'names' field is a structured numpy array. We need to iterate through it.
+    # We create a new array of the same shape and type to hold the new names.
+    old_names = adata.uns['rank_genes_groups']['names']
+    new_names = np.empty_like(old_names)
+
+    # Iterate through the structured array by field (cluster names)
+    for cluster in old_names.dtype.names:
+        # For each cluster, map the Ensembl IDs to gene symbols
+        new_names[cluster] = [
+            id_to_symbol_map.get(ensembl_id, ensembl_id) # Fallback to ID if not found
+            for ensembl_id in old_names[cluster]
+        ]
+
+    # Replace the old 'names' structured array with our new one
+    adata.uns['rank_genes_groups']['names'] = new_names
+
+    print("Update complete.")
+
+
+# In src/labcore/scrnaseq/utils.py
+
+def rank_genes_groups_df(
+    adata: AnnData,
+    group: str | None = None
+) -> pd.DataFrame:
+    """
+    Converts the output of sc.tl.rank_genes_groups into a tidy pandas DataFrame.
+
+    Args:
+        adata: The AnnData object with `rank_genes_groups` results.
+        group: The specific group (e.g., a cluster ID) to retrieve results for.
+               If None, results for all groups are concatenated.
+
+    Returns:
+        A pandas DataFrame with the DGE results.
+    """
+    results = adata.uns['rank_genes_groups']
+
+    # Get the field names (e.g., 'names', 'pvals_adj', 'logfoldchanges')
+    fields = list(results.keys())
+
+    # Remove fields that are not per-gene (like 'params')
+    fields = [f for f in fields if f != 'params']
+
+    if group:
+        if group not in results[fields[0]].dtype.names:
+            raise ValueError(f"Group '{group}' not found in rank_genes_groups results.")
+        groups = [group]
+    else:
+        groups = list(results[fields[0]].dtype.names)
+
+    all_dfs = []
+    for g in groups:
+        # Create a dictionary for the current group's data
+        group_data = {field: results[field][g] for field in fields}
+        df = pd.DataFrame(group_data)
+        df['group'] = g
+        all_dfs.append(df)
+
+    final_df = pd.concat(all_dfs, ignore_index=True)
+
+    # Reorder columns for clarity
+    col_order = ['group', 'names', 'logfoldchanges', 'pvals', 'pvals_adj', 'scores']
+    final_df = final_df[[c for c in col_order if c in final_df.columns]]
+
+    return final_df
