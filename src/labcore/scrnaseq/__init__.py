@@ -18,7 +18,8 @@ from .utils import (
     markers_df_to_dict,
     adata_status,
     rank_genes_groups_df,
-    get_top_markers
+    get_top_markers,
+    print_top_markers
 )
 
 # From workflows.py
@@ -46,6 +47,7 @@ __all__ = [
     "attach_gene_symbols",
     "rank_genes_groups_df",
     "get_top_markers",
+    "print_top_markers",
     "map_markers_to_ids",
     "markers_df_to_dict",
     "adata_status",

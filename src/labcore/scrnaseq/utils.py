@@ -152,6 +152,36 @@ def rank_genes_groups_df(
     return final_df
 
 
+def get_top_markers(
+    adata: AnnData,
+    group_id: str,
+    n_top: int = 10,
+    sort_by: str = 'scores',
+    ascending: bool = False
+) -> pd.DataFrame:
+    """
+    Extracts a DataFrame of the top N marker genes for a specific group.
+
+    Args:
+        adata: AnnData object after running rank_genes_groups.
+        group_id: The ID of the group/cluster to get markers for.
+        n_top: The number of top genes to return.
+        sort_by: The column to sort by (e.g., 'scores', 'pvals_adj').
+        ascending: The sort order. False for descending (best markers first).
+
+    Returns:
+        A pandas DataFrame with the top N marker genes for the specified group.
+    """
+    # Use our existing function to get the full table
+    full_df = rank_genes_groups_df(adata)
+
+    # Filter and sort
+    group_df = full_df[full_df['group'] == str(group_id)]
+    top_markers = group_df.sort_values(by=sort_by, ascending=ascending)
+
+    return top_markers.head(n_top)
+
+
 def print_top_markers(
     dge_df: pd.DataFrame,
     cluster_id: str,
