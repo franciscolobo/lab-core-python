@@ -151,32 +151,41 @@ def rank_genes_groups_df(
 
     return final_df
 
-def get_top_markers(
-    adata: AnnData,
-    group_id: str,
+
+def print_top_markers(
+    dge_df: pd.DataFrame,
+    cluster_id: str,
     n_top: int = 10,
-    sort_by: str = 'scores',
-    ascending: bool = False
-) -> pd.DataFrame:
+    display_cols: list[str] | None = None  # <-- NEW PARAMETER
+):
     """
-    Extracts a DataFrame of the top N marker genes for a specific group.
+    Filters, sorts, and prints the top N marker genes for a specific cluster,
+    allowing for custom column selection.
 
     Args:
-        adata: AnnData object after running rank_genes_groups.
-        group_id: The ID of the group/cluster to get markers for.
-        n_top: The number of top genes to return.
-        sort_by: The column to sort by (e.g., 'scores', 'pvals_adj').
-        ascending: The sort order. False for descending (best markers first).
-
-    Returns:
-        A pandas DataFrame with the top N marker genes for the specified group.
+        dge_df: The DataFrame of DGE results from rank_genes_groups_df.
+        cluster_id: The ID of the cluster to display.
+        n_top: The number of top genes to print.
+        display_cols: An optional list of column names to display. If None, a
+                      default set is used.
     """
-    # Use our existing function to get the full table
-    full_df = rank_genes_groups_df(adata)
+    # --- THIS IS THE NEW LOGIC ---
+    # If the user doesn't specify columns, use a helpful default set.
+    if display_cols is None:
+        display_cols = ['gene_symbol', 'logfoldchanges', 'pvals_adj', 'scores']
 
-    # Filter and sort
-    group_df = full_df[full_df['group'] == str(group_id)]
-    top_markers = group_df.sort_values(by=sort_by, ascending=ascending)
+    try:
+        # Filter for the specific cluster
+        cluster_df = dge_df[dge_df['group'] == str(cluster_id)]
 
-    return top_markers.head(n_top)
+        # Sort by the 'scores' column to find the best markers
+        top_markers = cluster_df.sort_values(by='scores', ascending=False)
+
+        print(f"\n--- Top {n_top} DEGs for Cluster {cluster_id} ---")
+        # Use the 'display_cols' variable to select which columns to print
+        print(top_markers[display_cols].head(n_top).to_string())
+
+    except KeyError:
+        print(f"Error: One or more of the requested columns do not exist in the DataFrame.")
+        print(f"Available columns are: {dge_df.columns.tolist()}")
 
