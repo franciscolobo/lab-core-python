@@ -17,7 +17,8 @@ from .utils import (
     map_markers_to_ids,
     markers_df_to_dict,
     adata_status,
-    rank_genes_groups_df
+    rank_genes_groups_df,
+    get_top_markers
 )
 
 # From workflows.py
