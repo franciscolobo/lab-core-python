@@ -385,3 +385,73 @@ def plot_grouped_violin(
         else:
             plt.show()
 
+
+def plot_proportions(
+    adata: AnnData,
+    group_by: str,
+    category_to_plot: str,
+    save_path: str | None = None,
+    dpi: int = 150,
+) -> None:
+    """
+    Calculates and plots the relative proportions of categories within groups
+    as a stacked bar chart.
+
+    For example, it can plot the proportion of each 'leiden' cluster
+    (category_to_plot) across different 'SampleID's (group_by).
+
+    Args:
+        adata: An AnnData object.
+        group_by: The column in .obs that defines the main groups for the x-axis
+                  (e.g., 'SampleID', 'condition').
+        category_to_plot: The column in .obs that contains the categories whose
+                          proportions will be plotted (e.g., 'leiden', 'cell_type').
+        save_path: If provided, the figure will be saved to this path.
+        dpi: The resolution for the saved figure.
+    """
+    print(f"Calculating proportions of '{category_to_plot}' within each '{group_by}' group...")
+
+    # --- 1. Calculate the Proportions using pandas ---
+    # Count the number of cells for each combination of group_by and category_to_plot
+    counts_df = adata.obs.groupby([group_by, category_to_plot], observed=True).size().unstack(fill_value=0)
+    
+    # Normalize the counts to get proportions (each row will sum to 1)
+    proportions_df = counts_df.div(counts_df.sum(axis=1), axis=0)
+
+    # --- 2. Plot the Stacked Bar Chart ---
+    fig, ax = plt.subplots(figsize=(max(8, 0.5 * len(proportions_df.index)), 6))
+
+    # Use the pandas plotting wrapper on the DataFrame
+    proportions_df.plot(
+        kind='bar',
+        stacked=True,
+        ax=ax,
+        cmap='tab20' # Use a colormap with many distinct colors
+    )
+    
+    # --- 3. Prettify the Plot ---
+    ax.set_title(f"Proportions of {category_to_plot} by {group_by}")
+    ax.set_xlabel(group_by)
+    ax.set_ylabel("Proportion of Cells")
+    ax.tick_params(axis='x', rotation=45, ha='right')
+    
+    # Place the legend outside the plot area
+    ax.legend(title=category_to_plot, bbox_to_anchor=(1.02, 1), loc='upper left', frameon=False)
+    
+    # Ensure y-axis goes up to 1 (100%)
+    ax.set_ylim(0, 1)
+
+    # Add a horizontal grid for easier reading
+    ax.yaxis.grid(True, linestyle='--', alpha=0.6)
+    
+    fig.tight_layout(rect=[0, 0, 0.85, 1]) # Adjust for external legend
+
+    if save_path:
+        print(f"Saving plot to: {save_path}")
+        os.makedirs(os.path.dirname(save_path) or '.', exist_ok=True)
+        fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+    else:
+        plt.show()
+
+

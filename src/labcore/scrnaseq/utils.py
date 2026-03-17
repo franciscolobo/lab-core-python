@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 import scipy.sparse as sp
 from anndata import AnnData 
+import scanpy as sc
+
 
 def attach_gene_symbols(adata_obj, gene_map, col="gene_symbol"):
     """Attach a gene_symbol column to adata_obj.var using var_names (gene IDs) as keys."""
@@ -45,6 +47,92 @@ def adata_status(adata, counts_layer="counts"):
     print(f"obsm keys: {list(adata.obsm.keys())}")
     print(f"obsp keys: {list(adata.obsp.keys())}")
     if adata.raw: print(f"raw: present, with {adata.raw.n_vars:,} vars")
+
+
+# In src/labcore/scrnaseq/utils.py
+
+def rank_genes_groups_df(
+    adata: AnnData, 
+    group: str | None = None,
+    gene_symbol_col: str = "gene_symbol"
+) -> pd.DataFrame:
+    """
+    Converts sc.tl.rank_genes_groups output into a tidy pandas DataFrame,
+    correctly calculating expression percentages within and outside the group.
+
+    Args:
+        adata: AnnData object with `rank_genes_groups` results (run with pts=True).
+        group: Specific group/cluster ID to retrieve. If None, concatenates all.
+        gene_symbol_col: Column in `adata.var` with gene symbols.
+
+    Returns:
+        A pandas DataFrame with DGE results.
+    """
+    if 'rank_genes_groups' not in adata.uns:
+        raise ValueError("Please run `sc.tl.rank_genes_groups` before calling this function.")
+
+    results = adata.uns['rank_genes_groups']
+    group_names = list(results['names'].dtype.names)
+    groupby_key = results['params']['groupby']
+
+    # --- NEW, ROBUST, AND SIMPLER LOGIC ---
+    # 1. Get a boolean DataFrame where True means a gene is expressed in a cell.
+    #    We use the 'counts' layer if it exists, as it's the most reliable source for this.
+    layer_to_use = 'counts' if 'counts' in adata.layers else None
+    expr_df = sc.get.obs_df(
+        adata,
+        keys=list(adata.var_names),
+        layer=layer_to_use,
+    ) > 0
+    
+    # 2. Add the cluster/group labels to this dataframe.
+    expr_df[groupby_key] = adata.obs[groupby_key].values
+
+    # 3. Use groupby().mean() to get the fraction of expressing cells for each gene in each cluster.
+    #    The result is a DataFrame of shape (n_clusters, n_genes).
+    pct_df = expr_df.groupby(groupby_key, observed=True).mean().T
+
+    all_dfs = []
+    groups_to_process = [group] if group else group_names
+    
+    for g in groups_to_process:
+        # Extract standard results
+        group_data = {
+            field: results[field][g]
+            for field in ['names', 'scores', 'logfoldchanges', 'pvals', 'pvals_adj']
+            if field in results
+        }
+        df = pd.DataFrame(group_data)
+        df['group'] = g
+        
+        # Get pct.1 from our pre-calculated table
+        df['pct.1'] = pct_df.loc[df['names'].values, g].values
+
+        # Calculate pct.2
+        other_groups = [og for og in group_names if og != g]
+        other_sizes = adata.obs[groupby_key].value_counts()[other_groups]
+        other_pcts = pct_df.loc[df['names'].values, other_groups]
+        df['pct.2'] = np.average(other_pcts, axis=1, weights=other_sizes.values)
+        
+        all_dfs.append(df)
+    
+    final_df = pd.concat(all_dfs, ignore_index=True)
+    
+    # Add diff and gene symbols
+    final_df['diff'] = final_df['pct.1'] - final_df['pct.2']
+    if gene_symbol_col in adata.var.columns:
+        id_to_symbol_map = adata.var[gene_symbol_col]
+        final_df['gene_symbol'] = final_df['names'].map(id_to_symbol_map)
+    
+    # Reorder columns
+    col_order = [
+        'group', 'gene_symbol', 'names', 'logfoldchanges', 
+        'pct.1', 'pct.2', 'diff', 'pvals', 'pvals_adj', 'scores'
+    ]
+    final_df = final_df[[c for c in col_order if c in final_df.columns]]
+    
+    return final_df
+
 
 def set_rank_genes_symbols(
     adata: AnnData,
@@ -91,74 +179,6 @@ def set_rank_genes_symbols(
     adata.uns['rank_genes_groups']['names'] = new_names
 
     print("Update complete.")
-
-# In src/labcore/scrnaseq/utils.py
-
-def rank_genes_groups_df(
-    adata: AnnData, 
-    group: str | None = None,
-    gene_symbol_col: str = "gene_symbol"
-) -> pd.DataFrame:
-    """
-    Converts sc.tl.rank_genes_groups output into a tidy pandas DataFrame,
-    including gene symbols and expression percentages (if available).
-
-    Args:
-        adata: AnnData object with `rank_genes_groups` results.
-        group: Specific group/cluster ID to retrieve. If None, concatenates all.
-        gene_symbol_col: Column in `adata.var` with gene symbols.
-
-    Returns:
-        A pandas DataFrame with DGE results.
-    """
-    if 'rank_genes_groups' not in adata.uns:
-        raise ValueError("Please run `sc.tl.rank_genes_groups` before calling this function.")
-
-    results = adata.uns['rank_genes_groups']
-    fields = [f for f in list(results.keys()) if f != 'params']
-    
-    if group:
-        groups = [group]
-    else:
-        groups = list(results[fields[0]].dtype.names)
-
-    all_dfs = []
-    for g in groups:
-        group_data = {field: results[field][g] for field in fields if field != 'pts'}
-        df = pd.DataFrame(group_data)
-        df['group'] = g
-        
-        # --- NEW LOGIC TO ADD EXPRESSION PERCENTAGES ---
-        if 'pts' in results:
-            pts_df = pd.DataFrame(results['pts'][g])
-            pts_df.columns = ['pct_1']
-            df = pd.concat([df, pts_df], axis=1)
-
-        # To get pct.2, we calculate the expression in all other cells
-        if 'pts' in results:
-            other_groups = [og for og in groups if og != g]
-            if other_groups:
-                # Average the pts across all other groups
-                other_pts = pd.DataFrame({og: results['pts'][og] for og in other_groups})
-                df['pct_2'] = other_pts.mean(axis=1).values
-        all_dfs.append(df)
-    
-    final_df = pd.concat(all_dfs, ignore_index=True)
-    
-    df['diff'] = df['pct_1'] - df['pct_2']
-
-    if gene_symbol_col in adata.var.columns:
-        id_to_symbol_map = adata.var[gene_symbol_col]
-        final_df['gene_symbol'] = final_df['names'].map(id_to_symbol_map)
-        
-    # Define the final column order, including the new percentage columns
-    col_order = [
-        'group', 'gene_symbol', 'names', 'logfoldchanges', 
-        'pct_1', 'pct_2', 'pvals', 'pvals_adj', 'scores'
-    ]
-    final_df = final_df[[c for c in col_order if c in final_df.columns]]
-    
-    return final_df
 
 
 def get_top_markers(
