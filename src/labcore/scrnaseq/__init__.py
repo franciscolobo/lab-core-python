@@ -44,6 +44,8 @@ __all__ = [
     "plot_grouped_violin",
     "preprocess_for_pca",
     "attach_gene_symbols",
+    "rank_genes_groups_df",
+    "get_top_markers",
     "map_markers_to_ids",
     "markers_df_to_dict",
     "adata_status",
