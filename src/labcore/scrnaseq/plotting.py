@@ -386,6 +386,8 @@ def plot_grouped_violin(
             plt.show()
 
 
+# In src/labcore/scrnaseq/plotting.py
+
 def plot_proportions(
     adata: AnnData,
     group_by: str,
@@ -394,58 +396,41 @@ def plot_proportions(
     dpi: int = 150,
 ) -> None:
     """
-    Calculates and plots the relative proportions of categories within groups
-    as a stacked bar chart.
-
-    For example, it can plot the proportion of each 'leiden' cluster
-    (category_to_plot) across different 'SampleID's (group_by).
-
-    Args:
-        adata: An AnnData object.
-        group_by: The column in .obs that defines the main groups for the x-axis
-                  (e.g., 'SampleID', 'condition').
-        category_to_plot: The column in .obs that contains the categories whose
-                          proportions will be plotted (e.g., 'leiden', 'cell_type').
-        save_path: If provided, the figure will be saved to this path.
-        dpi: The resolution for the saved figure.
+    ... (docstring is unchanged) ...
     """
     print(f"Calculating proportions of '{category_to_plot}' within each '{group_by}' group...")
 
-    # --- 1. Calculate the Proportions using pandas ---
-    # Count the number of cells for each combination of group_by and category_to_plot
     counts_df = adata.obs.groupby([group_by, category_to_plot], observed=True).size().unstack(fill_value=0)
-    
-    # Normalize the counts to get proportions (each row will sum to 1)
     proportions_df = counts_df.div(counts_df.sum(axis=1), axis=0)
 
-    # --- 2. Plot the Stacked Bar Chart ---
     fig, ax = plt.subplots(figsize=(max(8, 0.5 * len(proportions_df.index)), 6))
 
-    # Use the pandas plotting wrapper on the DataFrame
     proportions_df.plot(
         kind='bar',
         stacked=True,
         ax=ax,
-        cmap='tab20' # Use a colormap with many distinct colors
+        cmap='tab20'
     )
     
-    # --- 3. Prettify the Plot ---
     ax.set_title(f"Proportions of {category_to_plot} by {group_by}")
     ax.set_xlabel(group_by)
     ax.set_ylabel("Proportion of Cells")
-    ax.tick_params(axis='x', rotation=45, ha='right')
     
-    # Place the legend outside the plot area
-    ax.legend(title=category_to_plot, bbox_to_anchor=(1.02, 1), loc='upper left', frameon=False)
-    
-    # Ensure y-axis goes up to 1 (100%)
-    ax.set_ylim(0, 1)
+    # --- THIS IS THE FIX ---
+    # We set the rotation and horizontal alignment on the tick labels directly.
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
 
-    # Add a horizontal grid for easier reading
+    # The old tick_params call is removed as it was incorrect.
+    
+    ax.legend(title=category_to_plot, bbox_to_anchor=(1.02, 1), loc='upper left', frameon=False)
+    ax.set_ylim(0, 1)
     ax.yaxis.grid(True, linestyle='--', alpha=0.6)
     
-    fig.tight_layout(rect=[0, 0, 0.85, 1]) # Adjust for external legend
-
+    # Use fig.tight_layout() without rect to let it automatically adjust, 
+    # but call it *after* placing the legend.
+    # We can then manually adjust the subplot parameters if needed.
+    fig.subplots_adjust(right=0.8) # Make space on the right for the legend
+    
     if save_path:
         print(f"Saving plot to: {save_path}")
         os.makedirs(os.path.dirname(save_path) or '.', exist_ok=True)
@@ -453,5 +438,4 @@ def plot_proportions(
         plt.close(fig)
     else:
         plt.show()
-
 
