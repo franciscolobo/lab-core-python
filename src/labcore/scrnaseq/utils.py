@@ -151,3 +151,19 @@ def rank_genes_groups_df(
 
     return final_df
 
+def print_top_markers(dge_df: pd.DataFrame, cluster_id: str, n_top: int = 10):
+    """
+    Filters, sorts, and prints the top N marker genes for a specific cluster.
+    """
+    # Filter for the specific cluster
+    cluster_df = dge_df[dge_df['group'] == str(cluster_id)]
+
+    # Sort by the 'scores' column to find the best markers
+    top_markers = cluster_df.sort_values(by='scores', ascending=False)
+
+    # Define columns to display
+    display_cols = ['gene_symbol', 'logfoldchanges', 'pvals_adj', 'scores']
+
+    print(f"\n--- Top {n_top} DEGs for Cluster {cluster_id} ---")
+    print(top_markers[display_cols].head(n_top).to_string()) # .to_string() gives nice formatting
+
