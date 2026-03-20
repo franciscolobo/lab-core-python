@@ -9,7 +9,16 @@ from .io import read_cellbender_matrix_h5, build_gene_map_from_h5_paths
 from .qc import preprocess_sample, filter_outlier_cells, is_outlier
 
 # From plotting.py
-from .plotting import split_umap, plot_umap_markers_per_celltype, plot_grouped_violin, plot_qc_metrics, plot_umap_grid, plot_proportions
+from .plotting import (
+        split_umap,
+        plot_umap_markers_per_celltype,
+        plot_grouped_violin,
+        plot_qc_metrics,
+        plot_umap_grid,
+        plot_proportions
+)
+
+from .annotation import get_chromosome_genes
 
 # From utils.py
 from .utils import (
@@ -26,7 +35,7 @@ from .utils import (
 from .workflows import load_and_preprocess_from_manifest, run_downstream_analysis
 
 # From preprocessing.py
-from .preprocessing import score_cell_cycle, preprocess_for_pca
+from .preprocessing import score_cell_cycle, preprocess_for_pca, score_gene_modules
 
 from .orthology import get_orthologs
 
@@ -41,7 +50,9 @@ __all__ = [
     "plot_umap_markers_per_celltype",
     "plot_qc_metrics",
     "plot_umap_grid",
+    "get_chromosome_genes",
     "score_cell_cycle",
+    "score_gene_modules",
     "plot_grouped_violin",
     "plot_proportions",
     "preprocess_for_pca",

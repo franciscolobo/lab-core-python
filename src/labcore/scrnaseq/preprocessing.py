@@ -106,3 +106,53 @@ def preprocess_for_pca(
     sc.pp.scale(adata_hvg, max_value=10)
     
     return adata_hvg
+
+
+def score_gene_modules(
+    adata: AnnData,
+    gene_lists: dict[str, list[str]],
+    gene_symbol_col: str = "gene_symbol",
+    **kwargs,
+) -> AnnData:
+    """
+    Scores cells for multiple gene lists (modules).
+
+    This is a wrapper around `sc.tl.score_genes` that correctly handles finding
+    genes via their symbols and adding the scores to `adata.obs`.
+
+    Args:
+        adata: The AnnData object (should be log-normalized).
+        gene_lists: A dictionary where keys are the desired score names
+                    (e.g., 'X_score') and values are the lists of gene symbols.
+        gene_symbol_col: The column in `adata.var` that contains gene symbols.
+        **kwargs: Additional arguments passed to `sc.tl.score_genes`.
+
+    Returns:
+        The input AnnData object, updated with new score columns in `.obs`.
+    """
+    if gene_symbol_col not in adata.var.columns:
+        raise ValueError(f"Column '{gene_symbol_col}' not found in adata.var.")
+
+    available_genes = set(adata.var[gene_symbol_col].astype(str))
+
+    for score_name, gene_list in gene_lists.items():
+        # Find the intersection of the provided list and the available genes
+        genes_found = [gene for gene in gene_list if gene in available_genes]
+
+        print(f"Calculating score for '{score_name}': "
+              f"Found {len(genes_found)}/{len(gene_list)} genes in data.")
+
+        if len(genes_found) == 0:
+            print(f"  -> Warning: No genes found for '{score_name}'. Skipping.")
+            adata.obs[score_name] = 0.0
+            continue
+
+        sc.tl.score_genes(
+            adata,
+            gene_list=genes_found,
+            score_name=score_name,
+            use_raw=False, # Use log-normalized data
+            **kwargs
+        )
+    return adata
+
