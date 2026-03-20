@@ -18,19 +18,7 @@ def get_chromosome_genes(
 ) -> dict[str, list[str]]:
     """
     Fetches and saves lists of protein-coding genes for specified chromosomes.
-
-    Uses pyensembl to get gene data. On first run, this may download large
-    Ensembl annotation files. The resulting gene lists are saved as TSV files
-    to avoid re-downloading.
-
-    Args:
-        species: The common name of the species (e.g., 'mouse', 'chicken').
-        chromosomes: A list of chromosome names to fetch genes for (e.g., ['X', 'Y']).
-        output_dir: Directory where the gene list TSV files will be saved.
-
-    Returns:
-        A dictionary where keys are chromosome names and values are the lists
-        of protein-coding gene symbols found on that chromosome.
+    ... (docstring is unchanged) ...
     """
     if species not in ENSEMBL_RELEASES:
         raise ValueError(f"Species '{species}' not configured. Please add it to ENSEMBL_RELEASES.")
@@ -40,10 +28,8 @@ def get_chromosome_genes(
     
     all_genes = {}
 
-    # --- 1. Load data from cache or download ---
     print(f"Loading Ensembl release {release} for {species}...")
     try:
-        # This is fast if data is already downloaded
         ensembl_data = EnsemblRelease(release, species=species)
     except Exception as e:
         print(f"Could not load Ensembl data for {species} release {release}.")
@@ -54,21 +40,27 @@ def get_chromosome_genes(
         file_path = os.path.join(output_dir, f"{species}_release{release}_chrom_{chrom}_genes.tsv")
         
         if os.path.exists(file_path):
-            # --- 2a. Load from saved file if it exists ---
             print(f"Loading genes for chromosome '{chrom}' from cached file: {file_path}")
             df = pd.read_csv(file_path, sep="\t")
             all_genes[chrom] = df['gene_symbol'].tolist()
         else:
-            # --- 2b. Fetch from pyensembl and save ---
-            print(f"Fetching protein-coding genes for chromosome '{chrom}'...")
-            genes_on_chrom = ensembl_data.genes(contig=chrom, biotype='protein_coding')
+            print(f"Fetching all genes for chromosome '{chrom}'...")
             
-            # Filter out genes with no symbol
-            gene_symbols = [g.gene_name for g in genes_on_chrom if g.gene_name]
+            # --- THIS IS THE FIX ---
+            # 1. Get ALL genes on the chromosome first.
+            all_genes_on_chrom = ensembl_data.genes(contig=chrom)
             
-            print(f"Found {len(gene_symbols)} genes. Saving to file: {file_path}")
+            # 2. Now, filter this list in Python.
+            print(f"Filtering for protein-coding genes...")
+            protein_coding_genes = [
+                g for g in all_genes_on_chrom 
+                if g.biotype == 'protein_coding' and g.gene_name is not None
+            ]
+            
+            gene_symbols = [g.gene_name for g in protein_coding_genes]
+            
+            print(f"Found {len(gene_symbols)} protein-coding genes. Saving to file: {file_path}")
             pd.DataFrame({'gene_symbol': gene_symbols}).to_csv(file_path, sep="\t", index=False)
             all_genes[chrom] = gene_symbols
             
     return all_genes
-
