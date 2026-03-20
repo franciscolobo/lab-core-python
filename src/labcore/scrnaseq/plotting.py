@@ -394,9 +394,12 @@ def plot_proportions(
     category_to_plot: str,
     save_path: str | None = None,
     dpi: int = 150,
-) -> None:
+) -> plt.Figure:
     """
-    ... (docstring is unchanged) ...
+    Calculates and plots relative proportions, using scanpy's color palette
+    for consistency with UMAP plots.
+
+    ... (docstring) ...
     """
     print(f"Calculating proportions of '{category_to_plot}' within each '{group_by}' group...")
 
@@ -405,37 +408,42 @@ def plot_proportions(
 
     fig, ax = plt.subplots(figsize=(max(8, 0.5 * len(proportions_df.index)), 6))
 
+    # --- THIS IS THE NEW LOGIC FOR CONSISTENT COLORS ---
+    # 1. Check if a color palette exists in adata.uns
+    color_key = f"{category_to_plot}_colors"
+    plot_colors = None # Default to None
+
+    if color_key in adata.uns:
+        # 2. Create a mapping from the category name to its official color
+        category_names = adata.obs[category_to_plot].cat.categories
+        color_map = {cat: color for cat, color in zip(category_names, adata.uns[color_key])}
+
+        # 3. Order the colors according to the columns in our proportions_df
+        plot_colors = [color_map.get(col) for col in proportions_df.columns]
+
+    # 4. Use the specific list of colors if available, otherwise fall back to a cmap
     proportions_df.plot(
         kind='bar',
         stacked=True,
         ax=ax,
-        cmap='tab20'
+        color=plot_colors, # <-- Use the specific color list
+        cmap='tab20' if plot_colors is None else None # <-- Fallback if no colors found
     )
-    
+
+    # ... (the rest of the plotting code is unchanged) ...
     ax.set_title(f"Proportions of {category_to_plot} by {group_by}")
     ax.set_xlabel(group_by)
     ax.set_ylabel("Proportion of Cells")
-    
-    # --- THIS IS THE FIX ---
-    # We set the rotation and horizontal alignment on the tick labels directly.
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
-
-    # The old tick_params call is removed as it was incorrect.
-    
     ax.legend(title=category_to_plot, bbox_to_anchor=(1.02, 1), loc='upper left', frameon=False)
     ax.set_ylim(0, 1)
     ax.yaxis.grid(True, linestyle='--', alpha=0.6)
-    
-    # Use fig.tight_layout() without rect to let it automatically adjust, 
-    # but call it *after* placing the legend.
-    # We can then manually adjust the subplot parameters if needed.
-    fig.subplots_adjust(right=0.8) # Make space on the right for the legend
-    
+    fig.subplots_adjust(right=0.8)
+
     if save_path:
         print(f"Saving plot to: {save_path}")
         os.makedirs(os.path.dirname(save_path) or '.', exist_ok=True)
         fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
-        plt.close(fig)
-    else:
-        plt.show()
+
+    return fig
 
