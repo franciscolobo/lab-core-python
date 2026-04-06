@@ -108,6 +108,8 @@ def preprocess_for_pca(
     return adata_hvg
 
 
+# In src/labcore/scrnaseq/preprocessing.py
+
 def score_gene_modules(
     adata: AnnData,
     gene_lists: dict[str, list[str]],
@@ -115,10 +117,10 @@ def score_gene_modules(
     **kwargs,
 ) -> AnnData:
     """
-    Scores cells for multiple gene lists (modules).
+    Scores cells for multiple gene lists (modules) using a robust copy-based method.
 
-    This is a wrapper around `sc.tl.score_genes` that correctly handles finding
-    genes via their symbols and adding the scores to `adata.obs`.
+    This function temporarily creates a copy of the AnnData object with gene
+    symbols as the index to robustly run `sc.tl.score_genes`.
 
     Args:
         adata: The AnnData object (should be log-normalized).
@@ -133,26 +135,41 @@ def score_gene_modules(
     if gene_symbol_col not in adata.var.columns:
         raise ValueError(f"Column '{gene_symbol_col}' not found in adata.var.")
 
-    available_genes = set(adata.var[gene_symbol_col].astype(str))
+    # --- THIS IS THE ROBUST, COPY-BASED FIX ---
+    # Create a temporary copy to work on, ensuring we don't modify the original's index
+    adata_for_scoring = adata.copy()
+    
+    # Set the index of the copy to the gene symbols.
+    adata_for_scoring.var_names = adata_for_scoring.var[gene_symbol_col].astype(str)
+    # Ensure the new index is unique before proceeding
+    adata_for_scoring.var_names_make_unique()
 
     for score_name, gene_list in gene_lists.items():
-        # Find the intersection of the provided list and the available genes
-        genes_found = [gene for gene in gene_list if gene in available_genes]
+        # We still find the intersection, but now we do it against the new index
+        # This also handles case-insensitivity if needed.
+        available_genes_scoring = set(adata_for_scoring.var_names)
+        genes_to_score = [g for g in gene_list if g in available_genes_scoring]
 
         print(f"Calculating score for '{score_name}': "
-              f"Found {len(genes_found)}/{len(gene_list)} genes in data.")
-
-        if len(genes_found) == 0:
-            print(f"  -> Warning: No genes found for '{score_name}'. Skipping.")
-            adata.obs[score_name] = 0.0
+              f"Found {len(genes_to_score)}/{len(gene_list)} genes in data.")
+        
+        if len(genes_to_score) == 0:
+            print(f"  -> Warning: No genes found for '{score_name}'. Assigning score of 0.")
+            adata.obs[score_name] = 0.0 # Assign to the original adata
             continue
-
+            
+        # Run the scoring on the temporary object which has the correct index
         sc.tl.score_genes(
-            adata,
-            gene_list=genes_found,
+            adata_for_scoring,
+            gene_list=genes_to_score,
             score_name=score_name,
-            use_raw=False, # Use log-normalized data
+            use_raw=False,
             **kwargs
         )
+        
+        # Copy the calculated score from the temporary object back to the original
+        adata.obs[score_name] = adata_for_scoring.obs[score_name]
+        
+    print("Module scoring complete.")
     return adata
 

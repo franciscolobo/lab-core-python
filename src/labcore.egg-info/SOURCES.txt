@@ -7,6 +7,8 @@ src/labcore.egg-info/dependency_links.txt
 src/labcore.egg-info/requires.txt
 src/labcore.egg-info/top_level.txt
 src/labcore/scrnaseq/__init__.py
+src/labcore/scrnaseq/analysis.py
+src/labcore/scrnaseq/annotation.py
 src/labcore/scrnaseq/io.py
 src/labcore/scrnaseq/orthology.py
 src/labcore/scrnaseq/plotting.py

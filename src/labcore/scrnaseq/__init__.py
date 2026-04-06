@@ -2,6 +2,9 @@
 
 # Promote key functions to the scrnaseq sub-package level for easy access
 
+# From analysis.py
+from .analysis import run_ora
+
 # From io.py
 from .io import read_cellbender_matrix_h5, build_gene_map_from_h5_paths
 
@@ -15,10 +18,11 @@ from .plotting import (
         plot_grouped_violin,
         plot_qc_metrics,
         plot_umap_grid,
-        plot_proportions
+        plot_proportions,
+        plot_ora_results
 )
 
-from .annotation import get_chromosome_genes
+from .annotation import load_chromosome_genes_from_biomart
 
 # From utils.py
 from .utils import (
@@ -50,11 +54,12 @@ __all__ = [
     "plot_umap_markers_per_celltype",
     "plot_qc_metrics",
     "plot_umap_grid",
-    "get_chromosome_genes",
+    "load_chromosome_genes_from_biomart",
     "score_cell_cycle",
     "score_gene_modules",
     "plot_grouped_violin",
     "plot_proportions",
+    "plot_ora_results",
     "preprocess_for_pca",
     "attach_gene_symbols",
     "rank_genes_groups_df",
@@ -66,5 +71,5 @@ __all__ = [
     "load_and_preprocess_from_manifest",
     "run_downstream_analysis",
     "get_orthologs",
-
+    "run_ora",
 ]

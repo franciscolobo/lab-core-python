@@ -13,6 +13,8 @@ Description-Content-Type: text/markdown
 Requires-Dist: scanpy>=1.9.0
 Requires-Dist: pandas>=1.5.0
 Requires-Dist: gprofiler-official
+Requires-Dist: pyensembl
+Requires-Dist: gseapy
 
 # lab-core-python
 

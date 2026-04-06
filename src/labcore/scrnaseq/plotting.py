@@ -5,6 +5,7 @@ import scanpy as sc
 from anndata import AnnData
 import os
 import seaborn as sns
+import gseapy as gp
 
 def split_umap(
     adata: AnnData, split_by: str, ncol: int = 2, nrow: int = None,
@@ -447,3 +448,46 @@ def plot_proportions(
 
     return fig
 
+
+def plot_ora_results(
+    ora_results: pd.DataFrame,
+    top_n: int = 15,
+    save_path: str | None = None,
+    dpi: int = 150,
+) -> plt.Figure:
+    """
+    Visualizes ORA results from gseapy.enrichr as a dot plot.
+
+    Args:
+        ora_results: The DataFrame of enrichment results from `run_ora`.
+        top_n: The number of top terms (by Adjusted P-value) to display.
+        save_path: If provided, the figure will be saved to this path.
+        dpi: The resolution for the saved figure.
+
+    Returns:
+        The matplotlib Figure object containing the plot.
+    """
+    if ora_results.empty:
+        print("Input DataFrame is empty. Cannot generate plot.")
+        # Return an empty figure
+        fig, ax = plt.subplots()
+        ax.text(0.5, 0.5, "No Enrichment Results", ha='center', va='center')
+        return fig
+
+    # gseapy's dotplot function is excellent for this
+    # It requires a gseapy.Enrichr object, so we create one from the results
+    # We can also call the function directly with the dataframe
+    print(f"Plotting top {top_n} enriched terms...")
+
+    fig = gp.dotplot(
+        ora_results,
+        title=ora_results['Gene_set'].iloc[0], # Use the library name as title
+        x='Combined Score',
+        top_term=top_n,
+        show_ring=True, # Shows p-value as ring color
+        ofname=save_path, # gseapy can handle saving directly
+        dpi=dpi,
+        figsize=(6, 0.5 * top_n) # Adjust height based on number of terms
+    )
+
+    return fig

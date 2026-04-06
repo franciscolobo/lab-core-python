@@ -1,0 +1,21 @@
+name: scrna_py310_final
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.10
+  - numpy<2          # Still critical
+  - scipy~=1.11.0    # <-- NEW: Pinning scipy to a known good version
+  - pandas
+  - scanpy
+  - scikit-learn
+  - matplotlib
+  - pyarrow
+  - harmonypy
+  - gprofiler-official
+  - pyensembl
+  - setuptools
+  - ipykernel
+  - requests
+  - ipywidgets
