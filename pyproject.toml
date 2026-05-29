@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 name = "labcore"
 version = "0.1.0"
 authors = [
-  { name="Your Lab Name", email="lab.contact@example.com" },
+  { name="CDBL", email="franciscolobo@gmail.com" },
 ]
 description = "A core library of shared Python tools for [Your Lab Name]."
 readme = "README.md"
@@ -31,6 +31,17 @@ dependencies = [
     "pyensembl",
     "gseapy"
 ]
+
+[project.optional-dependencies]
+integration = [
+    "samap",
+    "samalg",
+    "anndata",
+    "matplotlib",
+    "holoviews",
+    "bokeh",
+]
+
 
 [project.urls]
 Homepage = "https://github.com/franciscolobo/lab-core-python"

@@ -43,6 +43,8 @@ from .preprocessing import score_cell_cycle, preprocess_for_pca, score_gene_modu
 
 from .orthology import get_orthologs
 
+from .utils import describe_adata
+
 # Define what 'from labcore.scrnaseq import *' will import
 __all__ = [
     "read_cellbender_matrix_h5",
@@ -68,6 +70,7 @@ __all__ = [
     "map_markers_to_ids",
     "markers_df_to_dict",
     "adata_status",
+    "describe_adata",
     "load_and_preprocess_from_manifest",
     "run_downstream_analysis",
     "get_orthologs",
