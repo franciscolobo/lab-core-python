@@ -14,5 +14,6 @@ src/labcore/scrnaseq/orthology.py
 src/labcore/scrnaseq/plotting.py
 src/labcore/scrnaseq/preprocessing.py
 src/labcore/scrnaseq/qc.py
+src/labcore/scrnaseq/samap.py
 src/labcore/scrnaseq/utils.py
 src/labcore/scrnaseq/workflows.py

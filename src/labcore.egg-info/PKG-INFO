@@ -1,8 +1,8 @@
 Metadata-Version: 2.4
 Name: labcore
 Version: 0.1.0
-Summary: A core library of shared Python tools for [Your Lab Name].
-Author-email: Your Lab Name <lab.contact@example.com>
+Summary: A core library of shared Python tools.
+Author-email: CDBL <franciscolobo@gmail.com>
 Project-URL: Homepage, https://github.com/franciscolobo/lab-core-python
 Project-URL: Issues, https://github.com/franciscolobo/lab-core-python/issues
 Classifier: Programming Language :: Python :: 3
@@ -15,6 +15,9 @@ Requires-Dist: pandas>=1.5.0
 Requires-Dist: gprofiler-official
 Requires-Dist: pyensembl
 Requires-Dist: gseapy
+Provides-Extra: integration
+Requires-Dist: anndata; extra == "integration"
+Requires-Dist: matplotlib; extra == "integration"
 
 # lab-core-python
 

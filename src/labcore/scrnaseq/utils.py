@@ -6,11 +6,13 @@ import scipy.sparse as sp
 from anndata import AnnData 
 import scanpy as sc
 
-def describe_adata(adata, cell_index: int = 0, n_features: int = 100) -> dict:
+def describe_adata(adata, cell_index: int = 0, n_features: int = 100,
+                   n_cells: int = 10) -> dict:
     """Print a concise structural summary of an AnnData object.
 
-    Displays the object's shape, the first few rows of cell and gene
-    metadata, and the expression profile of a single cell of interest.
+    Displays the object's shape, then each obs column individually with
+    a sample of cells, and the expression profile of a single cell of
+    interest.
 
     Args:
         adata: An AnnData object to inspect.
@@ -18,6 +20,8 @@ def describe_adata(adata, cell_index: int = 0, n_features: int = 100) -> dict:
             (the first cell).
         n_features: Number of gene-expression pairs to print for the
             selected cell. Defaults to 100.
+        n_cells: Number of example cells to show per obs column.
+            Defaults to 10.
 
     Returns:
         A dict mapping gene names to expression values for the selected
@@ -25,19 +29,42 @@ def describe_adata(adata, cell_index: int = 0, n_features: int = 100) -> dict:
 
     Example:
         >>> import scanpy as sc
-        >>> from labcore import scrnaseq
+        >>> from samap_extension import utils
         >>> adata = sc.read_h5ad("path/to/object.h5ad")
-        >>> profile = scrnaseq.describe_adata(adata, cell_index=0, n_features=50)
+        >>> profile = utils.describe_adata(adata, cell_index=0, n_features=50)
     """
+    SEP = "=" * 60
+
     # --- Shape ---
-    print(f"Shape: {adata.shape[0]:,} cells × {adata.shape[1]:,} genes\n")
+    print(f"{SEP}")
+    print(f"Shape: {adata.shape[0]:,} cells × {adata.shape[1]:,} genes")
+    print(f"{SEP}\n")
 
-    # --- Metadata ---
+    # --- obs columns, one per block ---
     print("Cell metadata (obs):")
-    print(adata.obs.head(), "\n")
+    print(f"  {adata.n_obs:,} cells × {len(adata.obs.columns)} columns\n")
 
+    sample = adata.obs.iloc[:n_cells]
+    for col in adata.obs.columns:
+        print(f"  --- {col} ---")
+        col_data = sample[col]
+        for cell_id, val in col_data.items():
+            print(f"    {cell_id}:  {val}")
+        print()
+
+    # --- var columns, one per block ---
     print("Gene metadata (var):")
-    print(adata.var.head(), "\n")
+    print(f"  {adata.n_vars:,} genes × {len(adata.var.columns)} columns\n")
+
+    if adata.var.columns.empty:
+        print("  (no var columns)\n")
+    else:
+        var_sample = adata.var.iloc[:n_cells]
+        for col in adata.var.columns:
+            print(f"  --- {col} ---")
+            for gene_id, val in var_sample[col].items():
+                print(f"    {gene_id}:  {val}")
+            print()
 
     # --- Single-cell expression profile ---
     cell_id = adata.obs_names[cell_index]
@@ -48,6 +75,7 @@ def describe_adata(adata, cell_index: int = 0, n_features: int = 100) -> dict:
 
     cell_profile = dict(zip(adata.var_names, cell_features.flatten()))
 
+    print(f"{SEP}")
     print(f"Cell ID: {cell_id}")
     print(f"First {n_features} features:")
     print(list(cell_profile.items())[:n_features])

@@ -11,7 +11,7 @@ version = "0.1.0"
 authors = [
   { name="CDBL", email="franciscolobo@gmail.com" },
 ]
-description = "A core library of shared Python tools for [Your Lab Name]."
+description = "A core library of shared Python tools."
 readme = "README.md"
 requires-python = ">=3.8"
 license = { file="LICENSE" }
@@ -34,12 +34,8 @@ dependencies = [
 
 [project.optional-dependencies]
 integration = [
-    "samap",
-    "samalg",
     "anndata",
     "matplotlib",
-    "holoviews",
-    "bokeh",
 ]
 
 
