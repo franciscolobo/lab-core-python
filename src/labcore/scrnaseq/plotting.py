@@ -52,7 +52,6 @@ def split_umap(
     fig.subplots_adjust(hspace=0.35, wspace=0.25)
     return fig
 
-
 def plot_umap_markers_per_celltype(
     adata: AnnData,
     markers_by_celltype: dict,
@@ -68,29 +67,21 @@ def plot_umap_markers_per_celltype(
     fig_root_name: str | None = "markers",
     dpi: int = 150,
     combine_figures: bool = False,
+    panel_size: float = 3.2,
+    title_height: float = 0.35,
 ) -> None:
     """
     For each cell type, plot UMAP feature plots for its markers.
 
-    Can save plots as one image per cell type or a single combined image.
-
-    Args:
-        adata: The AnnData object.
-        markers_by_celltype: Dictionary where keys are cell types and values are lists of marker genes.
-        basis: The embedding to use (e.g., 'umap').
-        ncols: Number of columns for the marker grid.
-        point_size: Size of points in the scatter plots.
-        use_gene_symbols: Whether to use gene symbols from `gene_symbol_col`.
-        gene_symbol_col: Column in `adata.var` containing gene symbols.
-        cmap: Colormap for expression.
-        vmin: Minimum value for the color scale.
-        vmax: Maximum value for the color scale.
-        save_dir: Directory to save the output files.
-        fig_root_name: A prefix for the output filenames.
-        dpi: Resolution for saved figures.
-        combine_figures: If True, save all cell type plots into a single, tall image.
-                         If False (default), save one image per cell type.
+    If combine_figures=True, all cell types are saved into one tall figure.
+    Each marker panel keeps the same size; cell types with more markers get more rows.
     """
+    import os
+    import re
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import scanpy as sc
+
     if use_gene_symbols and gene_symbol_col not in adata.var.columns:
         raise ValueError(f"adata.var lacks '{gene_symbol_col}'. Cannot use gene symbols.")
     if not markers_by_celltype:
@@ -100,40 +91,83 @@ def plot_umap_markers_per_celltype(
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
 
-    # --- NEW, MOST ROBUST LOGIC FOR COMBINED FIGURE USING SUBFIGURES ---
+    cell_types_to_plot = sorted([ct for ct, genes in markers_by_celltype.items() if genes])
+    if not cell_types_to_plot:
+        print("No markers to plot.")
+        return
+
     if combine_figures:
-        cell_types_to_plot = sorted([ct for ct, genes in markers_by_celltype.items() if genes])
-        if not cell_types_to_plot:
-            print("No markers to plot in combined figure.")
-            return
-            
-        n_cell_types = len(cell_types_to_plot)
-        
-        # Calculate figure height based on the total number of plot rows required
-        total_plot_rows = sum(int(np.ceil(len(markers_by_celltype[ct]) / ncols)) for ct in cell_types_to_plot)
-        fig_h = (3.5 * total_plot_rows) / n_cell_types # Average height per subfigure
-        
-        fig = plt.figure(figsize=(3.2 * ncols, fig_h * n_cell_types), constrained_layout=True)
-        subfigs = fig.subfigures(n_cell_types, 1, hspace=0.1)
+        row_counts = {
+            ct: int(np.ceil(len(markers_by_celltype[ct]) / ncols))
+            for ct in cell_types_to_plot
+        }
+
+        total_rows = sum(row_counts.values())
+        fig_w = panel_size * ncols
+        fig_h = panel_size * total_rows + title_height * len(cell_types_to_plot)
+
+        fig = plt.figure(figsize=(fig_w, fig_h), constrained_layout=False)
+
+        height_ratios = [
+            row_counts[ct] * panel_size + title_height
+            for ct in cell_types_to_plot
+        ]
+
+        outer = fig.add_gridspec(
+            nrows=len(cell_types_to_plot),
+            ncols=1,
+            height_ratios=height_ratios,
+            hspace=0.35,
+        )
 
         for i, cell_type in enumerate(cell_types_to_plot):
-            subfig = subfigs[i]
-            subfig.suptitle(cell_type, fontsize=16, weight='bold')
+            genes = list(markers_by_celltype[cell_type])
+            nrows = row_counts[cell_type]
 
-            genes = markers_by_celltype[cell_type]
-            nrows = int(np.ceil(len(genes) / ncols))
-            axs = subfig.subplots(nrows, ncols)
-            axs = np.array(axs).flatten()
+            sub = outer[i].subgridspec(
+                nrows=nrows + 1,
+                ncols=ncols,
+                height_ratios=[title_height] + [panel_size] * nrows,
+                hspace=0.25,
+                wspace=0.25,
+            )
+
+            title_ax = fig.add_subplot(sub[0, :])
+            title_ax.axis("off")
+            title_ax.text(
+                0.5,
+                0.5,
+                str(cell_type),
+                ha="center",
+                va="center",
+                fontsize=16,
+                weight="bold",
+                transform=title_ax.transAxes,
+            )
+
+            axs = []
+            for r in range(nrows):
+                for c in range(ncols):
+                    axs.append(fig.add_subplot(sub[r + 1, c]))
 
             for j, ax in enumerate(axs):
                 if j < len(genes):
                     g = genes[j]
                     sc.pl.embedding(
-                        adata, basis=basis, color=g,
+                        adata,
+                        basis=basis,
+                        color=g,
                         gene_symbols=gene_symbol_col if use_gene_symbols else None,
-                        ax=ax, show=False, size=point_size, cmap=cmap,
-                        vmin=vmin, vmax=vmax, frameon=False, title=str(g)
+                        ax=ax,
+                        show=False,
+                        size=point_size,
+                        cmap=cmap,
+                        vmin=vmin,
+                        vmax=vmax,
+                        frameon=False,
+                        title=str(g),
                     )
+                    ax.set_box_aspect(1)
                 else:
                     ax.axis("off")
 
@@ -145,33 +179,46 @@ def plot_umap_markers_per_celltype(
         else:
             plt.show()
 
-    # --- ORIGINAL LOGIC FOR SEPARATE FIGURES (UNCHANGED) ---
     else:
-        for cell_type in sorted(markers_by_celltype.keys()):
-            genes = list(markers_by_celltype.get(cell_type, []))
-            if not genes:
-                continue
-
+        for cell_type in cell_types_to_plot:
+            genes = list(markers_by_celltype[cell_type])
             nrows = int(np.ceil(len(genes) / ncols))
-            fig, axs = plt.subplots(nrows, ncols, figsize=(3.2 * ncols, 3.2 * nrows), constrained_layout=True)
-            axs = np.array(axs).flatten()
+
+            fig, axs = plt.subplots(
+                nrows,
+                ncols,
+                figsize=(panel_size * ncols, panel_size * nrows + title_height),
+                constrained_layout=True,
+                squeeze=False,
+            )
+            axs = axs.ravel()
 
             for j, ax in enumerate(axs):
                 if j < len(genes):
                     g = genes[j]
                     sc.pl.embedding(
-                        adata, basis=basis, color=g,
+                        adata,
+                        basis=basis,
+                        color=g,
                         gene_symbols=gene_symbol_col if use_gene_symbols else None,
-                        ax=ax, show=False, size=point_size, cmap=cmap,
-                        vmin=vmin, vmax=vmax, frameon=False, title=str(g)
+                        ax=ax,
+                        show=False,
+                        size=point_size,
+                        cmap=cmap,
+                        vmin=vmin,
+                        vmax=vmax,
+                        frameon=False,
+                        title=str(g),
                     )
+                    ax.set_box_aspect(1)
                 else:
                     ax.axis("off")
 
-            fig.suptitle(str(cell_type), fontsize=14)
-            
+            fig.suptitle(str(cell_type), fontsize=14, weight="bold")
+
             if save_dir:
-                out_path = os.path.join(save_dir, f"{fig_root_name}.{cell_type}.{basis}.png")
+                safe_ct = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(cell_type))
+                out_path = os.path.join(save_dir, f"{fig_root_name}.{safe_ct}.{basis}.png")
                 fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
                 plt.close(fig)
             else:
