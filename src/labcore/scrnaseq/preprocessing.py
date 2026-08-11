@@ -7,19 +7,28 @@ def score_cell_cycle(
     s_genes: list[str],
     g2m_genes: list[str],
     gene_symbol_col: str = "gene_symbol",
+    **kwargs,
 ) -> AnnData:
     """
     Scores cells for cell cycle phases (S and G2/M) using gene symbols.
 
-    This function robustly finds the intersection of the provided marker gene
-    lists with the genes actually present in the AnnData object and performs
-    scoring without modifying the AnnData index.
+    This is the scanpy equivalent of Seurat's `CellCycleScoring()`. Seurat's
+    function computes S.Score and G2M.Score via `AddModuleScore()`, which
+    scores a gene set relative to randomly sampled control genes matched on
+    expression bins -- not a simple mean. Here we use `sc.tl.score_genes()`,
+    which implements the same control-gene-subtraction approach, instead of
+    a raw average of expression.
+
+    Phase assignment mirrors Seurat's logic: a cell is "S" if its S_score
+    exceeds its G2M_score and is > 0; "G2M" if the reverse; otherwise "G1".
 
     Args:
         adata: The AnnData object (should be log-normalized).
         s_genes: A list of gene symbols for the S phase.
         g2m_genes: A list of gene symbols for the G2/M phase.
         gene_symbol_col: The column in `adata.var` that contains the gene symbols.
+        **kwargs: Additional arguments forwarded to `sc.tl.score_genes`
+            (e.g. `ctrl_size`, `n_bins`, `random_state`).
 
     Returns:
         The input AnnData object, updated with 'S_score', 'G2M_score',
@@ -28,51 +37,57 @@ def score_cell_cycle(
     if gene_symbol_col not in adata.var.columns:
         raise ValueError(f"Column '{gene_symbol_col}' not found in adata.var.")
 
-    print("Scoring cell cycle phases...")
+    print("Scoring cell cycle phases with sc.tl.score_genes (AddModuleScore-equivalent)...")
 
-    # --- FINAL, ROBUST LOGIC ---
-    # Create a mapping from UPPERCASE gene symbols to their original index positions
-    gene_symbol_map = {
-        symbol.upper(): i
-        for i, symbol in enumerate(adata.var[gene_symbol_col].astype(str))
-    }
+    # Work on a copy with gene symbols as var_names so sc.tl.score_genes can
+    # match on symbol directly (case-insensitively, like the original logic).
+    adata_for_scoring = adata.copy()
+    adata_for_scoring.var_names = adata_for_scoring.var[gene_symbol_col].astype(str)
+    adata_for_scoring.var_names_make_unique()
 
-    # Find the index positions of the cell cycle genes that exist in our data
-    s_genes_idx = [gene_symbol_map[g.upper()] for g in s_genes if g.upper() in gene_symbol_map]
-    g2m_genes_idx = [gene_symbol_map[g.upper()] for g in g2m_genes if g.upper() in gene_symbol_map]
+    sym_map = {v.upper(): v for v in adata_for_scoring.var_names}
+    s_genes_found = [sym_map[g.upper()] for g in s_genes if g.upper() in sym_map]
+    g2m_genes_found = [sym_map[g.upper()] for g in g2m_genes if g.upper() in sym_map]
 
-    print(f"Found {len(s_genes_idx)}/{len(s_genes)} S-phase genes in data.")
-    print(f"Found {len(g2m_genes_idx)}/{len(g2m_genes)} G2/M-phase genes in data.")
+    print(f"Found {len(s_genes_found)}/{len(s_genes)} S-phase genes in data.")
+    print(f"Found {len(g2m_genes_found)}/{len(g2m_genes)} G2/M-phase genes in data.")
 
-    if not s_genes_idx or not g2m_genes_idx:
+    if not s_genes_found or not g2m_genes_found:
         raise ValueError("Not enough cell cycle genes were found in the data to proceed with scoring.")
 
-    # Calculate the mean expression of the gene sets for each cell
-    s_score = adata.X[:, s_genes_idx].mean(axis=1)
-    g2m_score = adata.X[:, g2m_genes_idx].mean(axis=1)
+    # Score each gene set against its own set of expression-matched control genes,
+    # exactly as AddModuleScore does for each list in Seurat.
+    sc.tl.score_genes(
+        adata_for_scoring,
+        gene_list=s_genes_found,
+        score_name="S_score",
+        use_raw=False,
+        **kwargs,
+    )
+    sc.tl.score_genes(
+        adata_for_scoring,
+        gene_list=g2m_genes_found,
+        score_name="G2M_score",
+        use_raw=False,
+        **kwargs,
+    )
 
-    # Convert to numpy arrays if they are sparse matrices
-    if hasattr(s_score, 'A'): s_score = s_score.A.flatten()
-    if hasattr(g2m_score, 'A'): g2m_score = g2m_score.A.flatten()
-        
-    # Assign scores to .obs
-    adata.obs['S_score'] = s_score
-    adata.obs['G2M_score'] = g2m_score
+    # Copy scores back onto the original object
+    adata.obs["S_score"] = adata_for_scoring.obs["S_score"]
+    adata.obs["G2M_score"] = adata_for_scoring.obs["G2M_score"]
 
-    # Assign phase based on which score is higher
-    phase = pd.Series('S', index=adata.obs.index)
-    phase[adata.obs['G2M_score'] > adata.obs['S_score']] = 'G2M'
-    
-    # Define a threshold for 'G1' phase
-    # This is a simple heuristic; a more complex one could be used
-    g1_threshold = 0.0
-    phase[(adata.obs['S_score'] <= g1_threshold) & (adata.obs['G2M_score'] <= g1_threshold)] = 'G1'
-    
-    adata.obs['phase'] = pd.Categorical(phase)
-    
+    # Assign phase using Seurat's rule: whichever score is higher AND > 0 wins;
+    # if neither score clears 0, the cell is classified as G1.
+    phase = pd.Series("G1", index=adata.obs.index)
+    is_s = (adata.obs["S_score"] > adata.obs["G2M_score"]) & (adata.obs["S_score"] > 0)
+    is_g2m = (adata.obs["G2M_score"] > adata.obs["S_score"]) & (adata.obs["G2M_score"] > 0)
+    phase[is_s] = "S"
+    phase[is_g2m] = "G2M"
+
+    adata.obs["phase"] = pd.Categorical(phase, categories=["G1", "S", "G2M"])
+
     print("Cell cycle scoring complete.")
     return adata
-
 
 def preprocess_for_pca(
     adata: AnnData,
