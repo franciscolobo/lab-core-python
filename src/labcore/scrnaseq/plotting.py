@@ -6,6 +6,9 @@ from anndata import AnnData
 import os
 import seaborn as sns
 import gseapy as gp
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import itertools
 
 def split_umap(
     adata: AnnData, split_by: str, ncol: int = 2, nrow: int = None,
@@ -537,4 +540,342 @@ def plot_ora_results(
         figsize=(6, 0.5 * top_n) # Adjust height based on number of terms
     )
 
+    return fig
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+_PLOTLY_QUALITATIVE = [
+    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+    "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+]
+
+
+def _build_hover_text(adata, indices, color_key, color_values, hover_cols):
+    """Construct one hover string per cell (barcode + color key + extra obs cols)."""
+    barcodes = adata.obs_names[indices]
+    lines = []
+    extra_cols = [c for c in (hover_cols or []) if c in adata.obs.columns]
+    for i, idx in enumerate(indices):
+        parts = [f"Cell: {barcodes[i]}", f"{color_key}: {color_values[i]}"]
+        for c in extra_cols:
+            parts.append(f"{c}: {adata.obs[c].iloc[idx]}")
+        lines.append("<br>".join(parts))
+    return lines
+
+
+def _get_color_values(adata, key):
+    """Fetch a color vector for `key` from .obs (categorical/continuous) or gene expression."""
+    if key in adata.obs.columns:
+        col = adata.obs[key]
+        is_categorical = hasattr(col, "cat") or col.dtype == object
+        return col.to_numpy(), is_categorical
+    elif key in adata.var_names:
+        X = adata[:, key].X
+        vals = X.toarray().flatten() if hasattr(X, "toarray") else np.asarray(X).flatten()
+        return vals, False
+    else:
+        raise KeyError(f"'{key}' not found in adata.obs.columns or adata.var_names.")
+
+
+def _square_limits(coords, pad_frac=0.05):
+    xmin, ymin = coords.min(axis=0)
+    xmax, ymax = coords.max(axis=0)
+    xc, yc = (xmin + xmax) / 2, (ymin + ymax) / 2
+    half = max(xmax - xmin, ymax - ymin) / 2 * (1 + pad_frac)
+    return [xc - half, xc + half], [yc - half, yc + half]
+
+
+# ---------------------------------------------------------------------------
+# Interactive UMAP grid
+# ---------------------------------------------------------------------------
+
+def plot_umap_grid_interactive(
+    adata: AnnData,
+    color_keys: list[str],
+    ncols: int = 2,
+    point_size: float = 4,
+    hover_cols: list[str] | None = None,
+    colorscale: str = "Viridis",
+    height_per_panel: int = 450,
+    width_per_panel: int = 450,
+) -> go.Figure:
+    """Interactive Plotly version of `plot_umap_grid`.
+
+    Each point shows a hover tooltip with cell barcode, the panel's color
+    value, and any extra `hover_cols` from `.obs` (e.g. sample ID, QC
+    metrics). Panels share square, synchronized axis limits.
+
+    Args:
+        adata: AnnData with `X_umap` in `.obsm`.
+        color_keys: obs columns or gene names to color/panel by.
+        ncols: Number of columns in the subplot grid.
+        point_size: Marker size.
+        hover_cols: Extra `.obs` columns to include in every tooltip
+            (e.g. `["sample_id", "total_counts", "pct_counts_mt"]`).
+        colorscale: Plotly colorscale for continuous keys.
+        height_per_panel: Panel height in px.
+        width_per_panel: Panel width in px.
+
+    Returns:
+        A `plotly.graph_objects.Figure`. Call `.show()` or `.write_html(...)`.
+    """
+    if "X_umap" not in adata.obsm:
+        raise KeyError("adata.obsm['X_umap'] not found. Run UMAP first.")
+
+    coords = adata.obsm["X_umap"]
+    x_lim, y_lim = _square_limits(coords)
+    n = len(color_keys)
+    nrows = int(np.ceil(n / ncols))
+
+    fig = make_subplots(
+        rows=nrows, cols=ncols, subplot_titles=color_keys,
+        horizontal_spacing=0.08, vertical_spacing=0.12,
+    )
+
+    seen_categories = set()
+    for i, key in enumerate(color_keys):
+        row, col = i // ncols + 1, i % ncols + 1
+        values, is_categorical = _get_color_values(adata, key)
+
+        if is_categorical:
+            categories = pd.Index(values).unique()
+            palette_key = f"{key}_colors"
+            if palette_key in adata.uns and hasattr(adata.obs[key], "cat"):
+                cat_order = list(adata.obs[key].cat.categories)
+                color_map = dict(zip(cat_order, adata.uns[palette_key]))
+            else:
+                color_map = {
+                    c: _PLOTLY_QUALITATIVE[j % len(_PLOTLY_QUALITATIVE)]
+                    for j, c in enumerate(categories)
+                }
+            for cat in categories:
+                mask = values == cat
+                idx = np.where(mask)[0]
+                fig.add_trace(
+                    go.Scattergl(
+                        x=coords[mask, 0], y=coords[mask, 1],
+                        mode="markers",
+                        marker=dict(size=point_size, color=color_map.get(cat, "gray")),
+                        name=str(cat),
+                        legendgroup=str(cat),
+                        showlegend=str(cat) not in seen_categories,
+                        text=_build_hover_text(adata, idx, key, values[mask], hover_cols),
+                        hoverinfo="text",
+                    ),
+                    row=row, col=col,
+                )
+                seen_categories.add(str(cat))
+        else:
+            idx = np.arange(adata.n_obs)
+            fig.add_trace(
+                go.Scattergl(
+                    x=coords[:, 0], y=coords[:, 1],
+                    mode="markers",
+                    marker=dict(
+                        size=point_size, color=values, colorscale=colorscale,
+                        colorbar=dict(len=0.9 / nrows, y=1 - (row - 0.5) / nrows, thickness=12),
+                        showscale=True,
+                    ),
+                    showlegend=False,
+                    text=_build_hover_text(adata, idx, key, values, hover_cols),
+                    hoverinfo="text",
+                ),
+                row=row, col=col,
+            )
+
+        fig.update_xaxes(range=x_lim, showticklabels=False, row=row, col=col)
+        fig.update_yaxes(range=y_lim, showticklabels=False, scaleanchor=f"x{i+1}" if i > 0 else "x", row=row, col=col)
+
+    fig.update_layout(
+        height=height_per_panel * nrows,
+        width=width_per_panel * ncols,
+        legend=dict(title="", itemsizing="constant"),
+        margin=dict(t=60, l=20, r=20, b=20),
+    )
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Interactive split UMAP
+# ---------------------------------------------------------------------------
+
+def split_umap_interactive(
+    adata: AnnData,
+    split_by: str,
+    color: str,
+    ncols: int = 2,
+    point_size: float = 4,
+    hover_cols: list[str] | None = None,
+    colorscale: str = "Viridis",
+    height_per_panel: int = 400,
+    width_per_panel: int = 400,
+) -> go.Figure:
+    """Interactive Plotly version of `split_umap`.
+
+    Facets the UMAP by categories of `split_by`, coloring every panel by
+    the single `color` key. Hover shows cell barcode, the color value, and
+    any extra `hover_cols`.
+
+    Args:
+        adata: AnnData with `X_umap` in `.obsm`.
+        split_by: obs column whose categories define the panels.
+        color: obs column or gene name to color points by (shared across panels).
+        ncols: Number of columns in the subplot grid.
+        point_size: Marker size.
+        hover_cols: Extra `.obs` columns to include in tooltips.
+        colorscale: Plotly colorscale used when `color` is continuous.
+        height_per_panel: Panel height in px.
+        width_per_panel: Panel width in px.
+
+    Returns:
+        A `plotly.graph_objects.Figure`.
+    """
+    if "X_umap" not in adata.obsm:
+        raise KeyError("adata.obsm['X_umap'] not found. Run UMAP first.")
+    if split_by not in adata.obs.columns:
+        raise KeyError(f"'{split_by}' not found in adata.obs.")
+
+    s = adata.obs[split_by]
+    categories = list(s.cat.categories) if hasattr(s, "cat") else sorted(s.unique())
+    coords = adata.obsm["X_umap"]
+    x_lim, y_lim = _square_limits(coords)
+    values, is_categorical = _get_color_values(adata, color)
+
+    nrows = int(np.ceil(len(categories) / ncols))
+    fig = make_subplots(
+        rows=nrows, cols=ncols, subplot_titles=[str(c) for c in categories],
+        horizontal_spacing=0.06, vertical_spacing=0.12,
+    )
+
+    # Precompute a shared color scheme if `color` is categorical
+    if is_categorical:
+        uniq = pd.Index(values).unique()
+        palette_key = f"{color}_colors"
+        if palette_key in adata.uns and hasattr(adata.obs[color], "cat"):
+            cat_order = list(adata.obs[color].cat.categories)
+            color_map = dict(zip(cat_order, adata.uns[palette_key]))
+        else:
+            color_map = {c: _PLOTLY_QUALITATIVE[j % len(_PLOTLY_QUALITATIVE)] for j, c in enumerate(uniq)}
+
+    seen_categories = set()
+    for i, cat in enumerate(categories):
+        row, col = i // ncols + 1, i % ncols + 1
+        panel_mask = (s == cat).to_numpy()
+        idx = np.where(panel_mask)[0]
+
+        if is_categorical:
+            for sub_cat in pd.Index(values[panel_mask]).unique():
+                sub_mask = panel_mask & (values == sub_cat)
+                sub_idx = np.where(sub_mask)[0]
+                fig.add_trace(
+                    go.Scattergl(
+                        x=coords[sub_mask, 0], y=coords[sub_mask, 1],
+                        mode="markers",
+                        marker=dict(size=point_size, color=color_map.get(sub_cat, "gray")),
+                        name=str(sub_cat),
+                        legendgroup=str(sub_cat),
+                        showlegend=str(sub_cat) not in seen_categories,
+                        text=_build_hover_text(adata, sub_idx, color, values[sub_mask], hover_cols),
+                        hoverinfo="text",
+                    ),
+                    row=row, col=col,
+                )
+                seen_categories.add(str(sub_cat))
+        else:
+            fig.add_trace(
+                go.Scattergl(
+                    x=coords[panel_mask, 0], y=coords[panel_mask, 1],
+                    mode="markers",
+                    marker=dict(
+                        size=point_size, color=values[panel_mask], colorscale=colorscale,
+                        showscale=(i == 0),
+                        colorbar=dict(thickness=12) if i == 0 else None,
+                    ),
+                    showlegend=False,
+                    text=_build_hover_text(adata, idx, color, values[panel_mask], hover_cols),
+                    hoverinfo="text",
+                ),
+                row=row, col=col,
+            )
+
+        fig.update_xaxes(range=x_lim, showticklabels=False, row=row, col=col)
+        fig.update_yaxes(range=y_lim, showticklabels=False, scaleanchor=f"x{i+1}" if i > 0 else "x", row=row, col=col)
+
+    fig.update_layout(
+        height=height_per_panel * nrows,
+        width=width_per_panel * ncols,
+        legend=dict(title=color, itemsizing="constant"),
+        margin=dict(t=60, l=20, r=20, b=20),
+    )
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Interactive stacked proportions
+# ---------------------------------------------------------------------------
+
+def plot_proportions_interactive(
+    adata: AnnData,
+    group_by: str,
+    category_to_plot: str,
+    height: int = 500,
+    width: int | None = None,
+) -> go.Figure:
+    """Interactive Plotly version of `plot_proportions`.
+
+    Hovering over any bar segment shows the group, the category, its
+    proportion, and its raw cell count. Uses the same `.uns` color
+    palette as scanpy's UMAP plots when available, for visual consistency.
+
+    Args:
+        adata: AnnData object.
+        group_by: obs column defining the x-axis groups (e.g. sample ID).
+        category_to_plot: obs column whose category proportions are stacked
+            within each group (e.g. cell type).
+        height: Figure height in px.
+        width: Figure width in px. Defaults to scaling with number of groups.
+
+    Returns:
+        A `plotly.graph_objects.Figure`.
+    """
+    counts_df = adata.obs.groupby([group_by, category_to_plot], observed=True).size().unstack(fill_value=0)
+    proportions_df = counts_df.div(counts_df.sum(axis=1), axis=0)
+
+    color_key = f"{category_to_plot}_colors"
+    if color_key in adata.uns and hasattr(adata.obs[category_to_plot], "cat"):
+        cat_order = list(adata.obs[category_to_plot].cat.categories)
+        color_map = dict(zip(cat_order, adata.uns[color_key]))
+    else:
+        color_map = {
+            c: _PLOTLY_QUALITATIVE[j % len(_PLOTLY_QUALITATIVE)]
+            for j, c in enumerate(proportions_df.columns)
+        }
+
+    fig = go.Figure()
+    for cat in proportions_df.columns:
+        fig.add_trace(
+            go.Bar(
+                x=proportions_df.index.astype(str),
+                y=proportions_df[cat],
+                name=str(cat),
+                marker_color=color_map.get(cat, "gray"),
+                customdata=counts_df[cat].to_numpy(),
+                hovertemplate=(
+                    f"Group: %{{x}}<br>{category_to_plot}: {cat}"
+                    "<br>Proportion: %{y:.1%}<br>Count: %{customdata}<extra></extra>"
+                ),
+            )
+        )
+
+    fig.update_layout(
+        barmode="stack",
+        height=height,
+        width=width or max(500, 40 * len(proportions_df.index)),
+        yaxis=dict(title="Proportion of Cells", range=[0, 1], tickformat=".0%"),
+        xaxis=dict(title=group_by, tickangle=45),
+        legend=dict(title=category_to_plot),
+        margin=dict(t=40, r=20, b=80, l=60),
+    )
     return fig

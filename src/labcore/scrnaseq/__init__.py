@@ -19,7 +19,11 @@ from .plotting import (
         plot_qc_metrics,
         plot_umap_grid,
         plot_proportions,
-        plot_ora_results
+        plot_ora_results,
+        # Interactive (Plotly) versions with hover tooltips
+        plot_umap_grid_interactive,
+        split_umap_interactive,
+        plot_proportions_interactive,
 )
 
 from .annotation import load_chromosome_genes_from_biomart
@@ -75,4 +79,8 @@ __all__ = [
     "run_downstream_analysis",
     "get_orthologs",
     "run_ora",
+    # Interactive (Plotly) versions with hover tooltips
+    "plot_umap_grid_interactive",
+    "split_umap_interactive",
+    "plot_proportions_interactive",
 ]

@@ -38,6 +38,9 @@ integration = [
     "matplotlib",
 ]
 
+interactive = [
+    "plotly",
+]
 
 [project.urls]
 Homepage = "https://github.com/franciscolobo/lab-core-python"
