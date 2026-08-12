@@ -20,6 +20,7 @@ from .plotting import (
         plot_umap_grid,
         plot_proportions,
         plot_ora_results,
+        plot_categorical_heatmap,
         # Interactive (Plotly) versions with hover tooltips
         plot_umap_grid_interactive,
         split_umap_interactive,
@@ -66,6 +67,7 @@ __all__ = [
     "plot_grouped_violin",
     "plot_proportions",
     "plot_ora_results",
+    "plot_categorical_heatmap",
     "preprocess_for_pca",
     "attach_gene_symbols",
     "rank_genes_groups_df",

@@ -879,3 +879,149 @@ def plot_proportions_interactive(
         margin=dict(t=40, r=20, b=80, l=60),
     )
     return fig
+
+def plot_categorical_heatmap(
+    adata: AnnData,
+    cat_x: str,
+    cat_y: str,
+    normalize: str | None = None,
+    log_scale: bool = False,
+    annotate: bool = True,
+    annotate_fmt: str | None = None,
+    cmap: str = "viridis",
+    figsize: tuple[float, float] | None = None,
+    annotate_fontsize: float = 8,
+    annotate_color_threshold: float = 0.5,
+    save_path: str | None = None,
+    dpi: int = 150,
+) -> plt.Figure:
+    """Plots a heatmap of cell counts (or proportions) between two categorical variables.
+
+    Cross-tabulates `cat_x` and `cat_y` from `adata.obs` and renders the
+    result as a heatmap, e.g. cluster vs. sample, cell type vs. condition,
+    or any two categorical `.obs` columns.
+
+    Args:
+        adata: AnnData object.
+        cat_x: `.obs` column plotted along the x-axis (columns of the
+            cross-tab).
+        cat_y: `.obs` column plotted along the y-axis (rows of the
+            cross-tab).
+        normalize: How to normalize the cross-tabulated counts before
+            plotting. One of:
+                - None: plot raw cell counts (default).
+                - "row": each row (per `cat_y` category) sums to 1.
+                - "col": each column (per `cat_x` category) sums to 1.
+                - "all": the entire table sums to 1.
+        log_scale: If True, color the heatmap using log1p-transformed
+            values (`log1p(count)` or `log1p(proportion)` depending on
+            `normalize`) while still annotating cells with the original
+            (non-log) values. Useful when a few cells dominate the count
+            scale and wash out the color contrast elsewhere. Defaults to
+            False.
+        annotate: If True, print the value inside each cell. Defaults to
+            True.
+        annotate_fmt: Format spec used for the annotations (e.g. `"d"`
+            for integers, `".1%"` for percentages, `".2f"` for floats).
+            If None, defaults to `"d"` when `normalize is None` and
+            `".1%"` otherwise.
+        cmap: Matplotlib colormap name.
+        figsize: Figure size `(width, height)`. Defaults to scaling with
+            the number of categories.
+        annotate_fontsize: Font size for in-cell annotations.
+        annotate_color_threshold: Fraction (0-1) of the color scale above
+            which annotation text switches from black to white, for
+            legibility against dark cells. Defaults to 0.5.
+        save_path: If provided, saves the figure to this path.
+        dpi: Resolution for the saved figure.
+
+    Returns:
+        The matplotlib Figure object containing the heatmap.
+
+    Raises:
+        ValueError: If `cat_x` or `cat_y` are not found in `adata.obs`,
+            or if `normalize` is not one of `{None, "row", "col", "all"}`.
+    """
+    if cat_x not in adata.obs.columns:
+        raise ValueError(f"'{cat_x}' not found in adata.obs.")
+    if cat_y not in adata.obs.columns:
+        raise ValueError(f"'{cat_y}' not found in adata.obs.")
+    if normalize not in (None, "row", "col", "all"):
+        raise ValueError(f"normalize must be one of {{None, 'row', 'col', 'all'}}, got '{normalize}'.")
+
+    # Cross-tabulate raw counts
+    counts_df = pd.crosstab(adata.obs[cat_y], adata.obs[cat_x])
+
+    # Preserve categorical ordering (and any scanpy color palettes) if present
+    if hasattr(adata.obs[cat_y], "cat"):
+        counts_df = counts_df.reindex(index=adata.obs[cat_y].cat.categories)
+    if hasattr(adata.obs[cat_x], "cat"):
+        counts_df = counts_df.reindex(columns=adata.obs[cat_x].cat.categories)
+    counts_df = counts_df.fillna(0)
+
+    # Apply normalization
+    if normalize == "row":
+        plot_df = counts_df.div(counts_df.sum(axis=1).replace(0, np.nan), axis=0).fillna(0)
+    elif normalize == "col":
+        plot_df = counts_df.div(counts_df.sum(axis=0).replace(0, np.nan), axis=1).fillna(0)
+    elif normalize == "all":
+        total = counts_df.values.sum()
+        plot_df = counts_df / total if total > 0 else counts_df.astype(float)
+    else:
+        plot_df = counts_df.astype(float)
+
+    # Values used for color mapping vs. values used for annotation text
+    color_df = np.log1p(plot_df) if log_scale else plot_df
+    annotate_df = plot_df
+
+    if annotate_fmt is None:
+        annotate_fmt = "d" if normalize is None else ".1%"
+
+    if figsize is None:
+        figsize = (max(6, 0.6 * plot_df.shape[1] + 2), max(4, 0.5 * plot_df.shape[0] + 2))
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    im = ax.imshow(color_df.values, cmap=cmap, aspect="auto")
+
+    ax.set_xticks(np.arange(plot_df.shape[1]))
+    ax.set_xticklabels(plot_df.columns, rotation=45, ha="right", rotation_mode="anchor")
+    ax.set_yticks(np.arange(plot_df.shape[0]))
+    ax.set_yticklabels(plot_df.index)
+    ax.set_xlabel(cat_x)
+    ax.set_ylabel(cat_y)
+
+    cbar_label = "log1p(count)" if (log_scale and normalize is None) else \
+                 "log1p(proportion)" if log_scale else \
+                 "Proportion" if normalize else "Count"
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label(cbar_label)
+
+    if annotate:
+        color_vals = color_df.values
+        vmin, vmax = np.nanmin(color_vals), np.nanmax(color_vals)
+        color_range = (vmax - vmin) if vmax > vmin else 1.0
+        for i in range(plot_df.shape[0]):
+            for j in range(plot_df.shape[1]):
+                norm_val = (color_vals[i, j] - vmin) / color_range
+                text_color = "white" if norm_val > annotate_color_threshold else "black"
+                value = annotate_df.values[i, j]
+                ax.text(
+                    j, i, format(value, annotate_fmt),
+                    ha="center", va="center",
+                    color=text_color, fontsize=annotate_fontsize,
+                )
+
+    title_bits = [f"{cat_y} vs. {cat_x}"]
+    if normalize:
+        title_bits.append(f"(normalized by {normalize})")
+    ax.set_title(" ".join(title_bits))
+
+    fig.tight_layout()
+
+    if save_path:
+        print(f"Saving plot to: {save_path}")
+        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+        fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
+
+    return fig
