@@ -985,14 +985,18 @@ def plot_categorical_heatmap(
 
     fig, ax = plt.subplots(figsize=figsize)
 
-    im = ax.imshow(color_df.values, cmap=cmap, aspect="auto")
+    im = ax.pcolormesh(
+        color_df.values, cmap=cmap, edgecolors="none", linewidth=0, antialiased=False,
+    )
+    ax.invert_yaxis()
 
-    ax.set_xticks(np.arange(plot_df.shape[1]))
+    ax.set_xticks(np.arange(plot_df.shape[1]) + 0.5)
     ax.set_xticklabels(plot_df.columns, rotation=45, ha="right", rotation_mode="anchor")
-    ax.set_yticks(np.arange(plot_df.shape[0]))
+    ax.set_yticks(np.arange(plot_df.shape[0]) + 0.5)
     ax.set_yticklabels(plot_df.index)
     ax.set_xlabel(cat_x)
     ax.set_ylabel(cat_y)
+    ax.grid(False)
 
     cbar_label = "log1p(count)" if (log_scale and normalize is None) else \
                  "log1p(proportion)" if log_scale else \
@@ -1012,7 +1016,7 @@ def plot_categorical_heatmap(
                 if annotate_fmt.endswith("d"):
                     value = int(round(value))
                 ax.text(
-                    j, i, format(value, annotate_fmt),
+                    j + 0.5, i + 0.5, format(value, annotate_fmt),
                     ha="center", va="center",
                     color=text_color, fontsize=annotate_fontsize,
                 )
