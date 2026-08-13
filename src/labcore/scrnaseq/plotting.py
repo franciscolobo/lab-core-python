@@ -880,6 +880,9 @@ def plot_proportions_interactive(
     )
     return fig
 
+
+# Add to src/labcore/scrnaseq/plotting.py
+
 def plot_categorical_heatmap(
     adata: AnnData,
     cat_x: str,
@@ -1006,6 +1009,8 @@ def plot_categorical_heatmap(
                 norm_val = (color_vals[i, j] - vmin) / color_range
                 text_color = "white" if norm_val > annotate_color_threshold else "black"
                 value = annotate_df.values[i, j]
+                if annotate_fmt.endswith("d"):
+                    value = int(round(value))
                 ax.text(
                     j, i, format(value, annotate_fmt),
                     ha="center", va="center",
