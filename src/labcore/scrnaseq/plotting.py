@@ -880,13 +880,13 @@ def plot_proportions_interactive(
     )
     return fig
 
-
 # Add to src/labcore/scrnaseq/plotting.py
 
 def plot_categorical_heatmap(
     adata: AnnData,
     cat_x: str,
     cat_y: str,
+    cat_split: str | None = None,
     normalize: str | None = None,
     log_scale: bool = False,
     annotate: bool = True,
@@ -895,6 +895,9 @@ def plot_categorical_heatmap(
     figsize: tuple[float, float] | None = None,
     annotate_fontsize: float = 8,
     annotate_color_threshold: float = 0.5,
+    group_gap: float = 0.5,
+    split_label_fontsize: float = 7,
+    group_label_fontsize: float = 10,
     save_path: str | None = None,
     dpi: int = 150,
 ) -> plt.Figure:
@@ -904,24 +907,38 @@ def plot_categorical_heatmap(
     result as a heatmap, e.g. cluster vs. sample, cell type vs. condition,
     or any two categorical `.obs` columns.
 
+    Optionally, a third categorical variable (`cat_split`) splits each
+    `cat_x` category into side-by-side sub-columns -- e.g. `cat_x` = cell
+    type, `cat_y` = time point, `cat_split` = genotype -- so that the two
+    (or more) levels of `cat_split` can be visually compared next to each
+    other, for every cell type, across every time point.
+
     Args:
         adata: AnnData object.
-        cat_x: `.obs` column plotted along the x-axis (columns of the
-            cross-tab).
+        cat_x: `.obs` column plotted along the x-axis (grouped columns of
+            the cross-tab).
         cat_y: `.obs` column plotted along the y-axis (rows of the
             cross-tab).
+        cat_split: Optional `.obs` column used to split each `cat_x`
+            group into side-by-side sub-columns (e.g. genotype, condition).
+            When provided, `cat_x` categories are rendered as visually
+            separated groups, each containing one sub-column per
+            `cat_split` category. Defaults to None (no splitting).
         normalize: How to normalize the cross-tabulated counts before
             plotting. One of:
                 - None: plot raw cell counts (default).
-                - "row": each row (per `cat_y` category) sums to 1.
-                - "col": each column (per `cat_x` category) sums to 1.
+                - "row": each row (per `cat_y` category) sums to 1. When
+                  `cat_split` is provided, normalization is done
+                  *separately within each `cat_split` level* -- i.e. each
+                  genotype's cell-type composition sums to 1 on its own,
+                  so genotypes with different total cell numbers remain
+                  comparable side by side.
+                - "col": each column (per `cat_x` / `cat_x`+`cat_split`
+                  combination) sums to 1.
                 - "all": the entire table sums to 1.
         log_scale: If True, color the heatmap using log1p-transformed
-            values (`log1p(count)` or `log1p(proportion)` depending on
-            `normalize`) while still annotating cells with the original
-            (non-log) values. Useful when a few cells dominate the count
-            scale and wash out the color contrast elsewhere. Defaults to
-            False.
+            values while still annotating cells with the original
+            (non-log) values. Defaults to False.
         annotate: If True, print the value inside each cell. Defaults to
             True.
         annotate_fmt: Format spec used for the annotations (e.g. `"d"`
@@ -935,6 +952,15 @@ def plot_categorical_heatmap(
         annotate_color_threshold: Fraction (0-1) of the color scale above
             which annotation text switches from black to white, for
             legibility against dark cells. Defaults to 0.5.
+        group_gap: Horizontal gap (in cell-width units) inserted between
+            `cat_x` groups when `cat_split` is provided. Ignored
+            otherwise. Defaults to 0.5.
+        split_label_fontsize: Font size for the inner (`cat_split`) tick
+            labels, shown under each sub-column. Only used when
+            `cat_split` is provided.
+        group_label_fontsize: Font size for the outer (`cat_x`) group
+            labels, shown below the split labels. Only used when
+            `cat_split` is provided.
         save_path: If provided, saves the figure to this path.
         dpi: Resolution for the saved figure.
 
@@ -942,29 +968,44 @@ def plot_categorical_heatmap(
         The matplotlib Figure object containing the heatmap.
 
     Raises:
-        ValueError: If `cat_x` or `cat_y` are not found in `adata.obs`,
-            or if `normalize` is not one of `{None, "row", "col", "all"}`.
+        ValueError: If `cat_x`, `cat_y`, or `cat_split` are not found in
+            `adata.obs`, or if `normalize` is not one of
+            `{None, "row", "col", "all"}`.
     """
-    if cat_x not in adata.obs.columns:
-        raise ValueError(f"'{cat_x}' not found in adata.obs.")
-    if cat_y not in adata.obs.columns:
-        raise ValueError(f"'{cat_y}' not found in adata.obs.")
+    for name in (cat_x, cat_y) + ((cat_split,) if cat_split else ()):
+        if name not in adata.obs.columns:
+            raise ValueError(f"'{name}' not found in adata.obs.")
     if normalize not in (None, "row", "col", "all"):
         raise ValueError(f"normalize must be one of {{None, 'row', 'col', 'all'}}, got '{normalize}'.")
 
-    # Cross-tabulate raw counts
-    counts_df = pd.crosstab(adata.obs[cat_y], adata.obs[cat_x])
+    def _categories(col):
+        s = adata.obs[col]
+        return list(s.cat.categories) if hasattr(s, "cat") else sorted(s.unique())
 
-    # Preserve categorical ordering (and any scanpy color palettes) if present
-    if hasattr(adata.obs[cat_y], "cat"):
-        counts_df = counts_df.reindex(index=adata.obs[cat_y].cat.categories)
-    if hasattr(adata.obs[cat_x], "cat"):
-        counts_df = counts_df.reindex(columns=adata.obs[cat_x].cat.categories)
-    counts_df = counts_df.fillna(0)
+    y_categories = _categories(cat_y)
+    x_categories = _categories(cat_x)
 
-    # Apply normalization
+    # --- Build the cross-tab (2-way or 3-way) ---------------------------
+    if cat_split is not None:
+        split_categories = _categories(cat_split)
+        counts_df = pd.crosstab(adata.obs[cat_y], [adata.obs[cat_x], adata.obs[cat_split]])
+        full_columns = pd.MultiIndex.from_product([x_categories, split_categories], names=[cat_x, cat_split])
+        counts_df = counts_df.reindex(index=y_categories, columns=full_columns, fill_value=0)
+    else:
+        counts_df = pd.crosstab(adata.obs[cat_y], adata.obs[cat_x])
+        counts_df = counts_df.reindex(index=y_categories, columns=x_categories, fill_value=0)
+
+    # --- Normalize --------------------------------------------------------
     if normalize == "row":
-        plot_df = counts_df.div(counts_df.sum(axis=1).replace(0, np.nan), axis=0).fillna(0)
+        if cat_split is not None:
+            plot_df = counts_df.astype(float).copy()
+            for sv in split_categories:
+                sub = counts_df.xs(sv, level=1, axis=1)
+                sub_norm = sub.div(sub.sum(axis=1).replace(0, np.nan), axis=0).fillna(0)
+                for xv in x_categories:
+                    plot_df[(xv, sv)] = sub_norm[xv]
+        else:
+            plot_df = counts_df.div(counts_df.sum(axis=1).replace(0, np.nan), axis=0).fillna(0)
     elif normalize == "col":
         plot_df = counts_df.div(counts_df.sum(axis=0).replace(0, np.nan), axis=1).fillna(0)
     elif normalize == "all":
@@ -973,30 +1014,93 @@ def plot_categorical_heatmap(
     else:
         plot_df = counts_df.astype(float)
 
-    # Values used for color mapping vs. values used for annotation text
     color_df = np.log1p(plot_df) if log_scale else plot_df
     annotate_df = plot_df
 
     if annotate_fmt is None:
         annotate_fmt = "d" if normalize is None else ".1%"
 
+    n_rows = len(y_categories)
+
+    # --- Lay out columns (inserting NaN gap columns between groups) ------
+    if cat_split is not None:
+        n_split = len(split_categories)
+        col_values = []  # tuples (xv, sv), or None for a gap column
+        for gi, xv in enumerate(x_categories):
+            for sv in split_categories:
+                col_values.append((xv, sv))
+            if gi < len(x_categories) - 1:
+                col_values.append(None)
+    else:
+        col_values = list(x_categories)
+
+    n_total_cols = len(col_values)
+    color_matrix = np.full((n_rows, n_total_cols), np.nan)
+    annotate_matrix = np.full((n_rows, n_total_cols), np.nan)
+    real_col_idx = []
+    group_col_idx: dict = {}
+
+    for ci, cv in enumerate(col_values):
+        if cv is None:
+            continue
+        color_matrix[:, ci] = color_df[cv].to_numpy()
+        annotate_matrix[:, ci] = annotate_df[cv].to_numpy()
+        real_col_idx.append(ci)
+        group_key = cv[0] if cat_split is not None else cv
+        group_col_idx.setdefault(group_key, []).append(ci)
+
+    # Non-uniform cell edges: normal width = 1.0, gap width = group_gap
+    edges = [0.0]
+    col_centers = np.full(n_total_cols, np.nan)
+    cursor = 0.0
+    for ci, cv in enumerate(col_values):
+        width = group_gap if cv is None else 1.0
+        col_centers[ci] = cursor + width / 2
+        cursor += width
+        edges.append(cursor)
+    edges = np.array(edges)
+    y_edges = np.arange(n_rows + 1, dtype=float)
+
+    # --- Plot ---------------------------------------------------------------
     if figsize is None:
-        figsize = (max(6, 0.6 * plot_df.shape[1] + 2), max(4, 0.5 * plot_df.shape[0] + 2))
+        fig_w = max(6, 0.45 * edges[-1] + 2)
+        fig_h = max(4, 0.5 * n_rows + (3.2 if cat_split is not None else 2))
+        figsize = (fig_w, fig_h)
 
     fig, ax = plt.subplots(figsize=figsize)
 
-    im = ax.pcolormesh(
-        color_df.values, cmap=cmap, edgecolors="none", linewidth=0, antialiased=False,
-    )
+    masked_vals = np.ma.masked_invalid(color_matrix)
+    im = ax.pcolormesh(edges, y_edges, masked_vals, cmap=cmap, edgecolors="none", linewidth=0, antialiased=False)
     ax.invert_yaxis()
-
-    ax.set_xticks(np.arange(plot_df.shape[1]) + 0.5)
-    ax.set_xticklabels(plot_df.columns, rotation=45, ha="right", rotation_mode="anchor")
-    ax.set_yticks(np.arange(plot_df.shape[0]) + 0.5)
-    ax.set_yticklabels(plot_df.index)
-    ax.set_xlabel(cat_x)
-    ax.set_ylabel(cat_y)
+    ax.set_xlim(0, edges[-1])
     ax.grid(False)
+
+    # y ticks
+    ax.set_yticks(np.arange(n_rows) + 0.5)
+    ax.set_yticklabels(y_categories)
+    ax.set_ylabel(cat_y)
+
+    # x ticks
+    if cat_split is not None:
+        ax.set_xticks(col_centers[real_col_idx])
+        split_labels = [col_values[i][1] for i in real_col_idx]
+        ax.set_xticklabels(
+            split_labels, rotation=45, ha="right", rotation_mode="anchor", fontsize=split_label_fontsize
+        )
+        trans = ax.get_xaxis_transform()
+        for xv in x_categories:
+            idxs = group_col_idx[xv]
+            center = np.mean(col_centers[idxs])
+            ax.text(
+                center, -0.16, str(xv), ha="center", va="top",
+                transform=trans, fontsize=group_label_fontsize, fontweight="bold",
+            )
+        ax.set_xlabel(cat_x, labelpad=45)
+        fig.subplots_adjust(bottom=0.32)
+    else:
+        ax.set_xticks(col_centers)
+        ax.set_xticklabels(x_categories, rotation=45, ha="right", rotation_mode="anchor")
+        ax.set_xlabel(cat_x)
 
     cbar_label = "log1p(count)" if (log_scale and normalize is None) else \
                  "log1p(proportion)" if log_scale else \
@@ -1005,28 +1109,32 @@ def plot_categorical_heatmap(
     cbar.set_label(cbar_label)
 
     if annotate:
-        color_vals = color_df.values
-        vmin, vmax = np.nanmin(color_vals), np.nanmax(color_vals)
+        vmin, vmax = np.nanmin(color_matrix), np.nanmax(color_matrix)
         color_range = (vmax - vmin) if vmax > vmin else 1.0
-        for i in range(plot_df.shape[0]):
-            for j in range(plot_df.shape[1]):
-                norm_val = (color_vals[i, j] - vmin) / color_range
+        for i in range(n_rows):
+            for ci in real_col_idx:
+                value = annotate_matrix[i, ci]
+                if np.isnan(value):
+                    continue
+                norm_val = (color_matrix[i, ci] - vmin) / color_range
                 text_color = "white" if norm_val > annotate_color_threshold else "black"
-                value = annotate_df.values[i, j]
                 if annotate_fmt.endswith("d"):
                     value = int(round(value))
                 ax.text(
-                    j + 0.5, i + 0.5, format(value, annotate_fmt),
+                    col_centers[ci], i + 0.5, format(value, annotate_fmt),
                     ha="center", va="center",
                     color=text_color, fontsize=annotate_fontsize,
                 )
 
     title_bits = [f"{cat_y} vs. {cat_x}"]
+    if cat_split is not None:
+        title_bits.append(f"split by {cat_split}")
     if normalize:
         title_bits.append(f"(normalized by {normalize})")
     ax.set_title(" ".join(title_bits))
 
-    fig.tight_layout()
+    if cat_split is None:
+        fig.tight_layout()
 
     if save_path:
         print(f"Saving plot to: {save_path}")
@@ -1034,3 +1142,4 @@ def plot_categorical_heatmap(
         fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
 
     return fig
+
