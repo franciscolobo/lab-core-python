@@ -881,6 +881,10 @@ def plot_proportions_interactive(
     )
     return fig
 
+# Add to src/labcore/scrnaseq/plotting.py
+
+import matplotlib.transforms as mtransforms
+
 
 def plot_categorical_heatmap(
     adata: AnnData,
@@ -1153,6 +1157,20 @@ def plot_categorical_heatmap(
                  "Proportion" if normalize else "Count"
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     cbar.set_label(cbar_label)
+
+    if log_scale:
+        max_val = np.nanmax(plot_df.to_numpy(dtype=float))
+        if max_val > 0:
+            n_decades = int(np.floor(np.log10(max_val))) + 1
+            tick_vals = [0] + [10 ** k for k in range(n_decades + 1)]
+            tick_vals = [v for v in tick_vals if v <= max_val * 1.0001]
+            if max_val not in tick_vals:
+                tick_vals.append(max_val)
+        else:
+            tick_vals = [0]
+        tick_positions = np.log10(np.array(tick_vals, dtype=float) + 1)
+        cbar.set_ticks(tick_positions)
+        cbar.set_ticklabels([f"{v:,.0f}" if v == int(v) else f"{v:,.2f}" for v in tick_vals])
 
     if annotate:
         vmin, vmax = np.nanmin(color_matrix), np.nanmax(color_matrix)
