@@ -880,8 +880,6 @@ def plot_proportions_interactive(
     )
     return fig
 
-# Add to src/labcore/scrnaseq/plotting.py
-
 def plot_categorical_heatmap(
     adata: AnnData,
     cat_x: str,
@@ -1014,7 +1012,7 @@ def plot_categorical_heatmap(
     else:
         plot_df = counts_df.astype(float)
 
-    color_df = np.log1p(plot_df) if log_scale else plot_df
+    color_df = np.log10(plot_df + 1) if log_scale else plot_df
     annotate_df = plot_df
 
     if annotate_fmt is None:
@@ -1092,18 +1090,18 @@ def plot_categorical_heatmap(
             idxs = group_col_idx[xv]
             center = np.mean(col_centers[idxs])
             ax.text(
-                center, -0.16, str(xv), ha="right", va="top", rotation=45, rotation_mode="anchor",
+                center - 0.3, -0.30, str(xv), ha="right", va="top", rotation=45, rotation_mode="anchor",
                 transform=trans, fontsize=group_label_fontsize, fontweight="bold",
             )
-        ax.set_xlabel(cat_x, labelpad=45)
-        fig.subplots_adjust(bottom=0.32)
+        ax.set_xlabel(cat_x, labelpad=90)
+        fig.subplots_adjust(bottom=0.42)
     else:
         ax.set_xticks(col_centers)
         ax.set_xticklabels(x_categories, rotation=45, ha="right", rotation_mode="anchor")
         ax.set_xlabel(cat_x)
 
-    cbar_label = "log1p(count)" if (log_scale and normalize is None) else \
-                 "log1p(proportion)" if log_scale else \
+    cbar_label = "log10(count+1)" if (log_scale and normalize is None) else \
+                 "log10(proportion+1)" if log_scale else \
                  "Proportion" if normalize else "Count"
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     cbar.set_label(cbar_label)
