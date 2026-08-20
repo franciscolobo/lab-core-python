@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.transforms as mtransforms
 import pandas as pd
 import scanpy as sc
 from anndata import AnnData
@@ -880,10 +881,6 @@ def plot_proportions_interactive(
     )
     return fig
 
-# Add to src/labcore/scrnaseq/plotting.py
-
-import matplotlib.transforms as mtransforms
-
 
 def plot_categorical_heatmap(
     adata: AnnData,
@@ -1125,7 +1122,7 @@ def plot_categorical_heatmap(
             txt = ax.text(
                 center, group_y_fig, str(xv), ha="right", va="top", rotation=45, rotation_mode="anchor",
                 transform=blended_data_fig, fontsize=group_label_fontsize, fontweight="bold",
-                annotation_clip=False,
+                clip_on=False,
             )
             group_texts.append(txt)
 
@@ -1139,7 +1136,7 @@ def plot_categorical_heatmap(
         title_txt = ax.text(
             0.5, title_y_fig, cat_x, ha="center", va="top",
             transform=blended_axes_fig, fontsize=plt.rcParams["axes.labelsize"],
-            annotation_clip=False,
+            clip_on=False,
         )
 
         # Reserve just enough bottom margin so nothing gets clipped.
