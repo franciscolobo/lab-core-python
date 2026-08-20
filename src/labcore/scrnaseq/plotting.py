@@ -1092,7 +1092,7 @@ def plot_categorical_heatmap(
             idxs = group_col_idx[xv]
             center = np.mean(col_centers[idxs])
             ax.text(
-                center, -0.16, str(xv), ha="center", va="top",
+                center, -0.16, str(xv), ha="right", va="top", rotation=45, rotation_mode="anchor",
                 transform=trans, fontsize=group_label_fontsize, fontweight="bold",
             )
         ax.set_xlabel(cat_x, labelpad=45)
@@ -1142,4 +1142,3 @@ def plot_categorical_heatmap(
         fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
 
     return fig
-
