@@ -880,6 +880,11 @@ def plot_proportions_interactive(
     )
     return fig
 
+# Add to src/labcore/scrnaseq/plotting.py
+
+import matplotlib.transforms as mtransforms
+
+
 def plot_categorical_heatmap(
     adata: AnnData,
     cat_x: str,
@@ -896,6 +901,9 @@ def plot_categorical_heatmap(
     group_gap: float = 0.5,
     split_label_fontsize: float = 7,
     group_label_fontsize: float = 10,
+    group_label_pad: float = 8,
+    xlabel_pad: float = 12,
+    bottom_pad: float = 8,
     save_path: str | None = None,
     dpi: int = 150,
 ) -> plt.Figure:
@@ -934,9 +942,9 @@ def plot_categorical_heatmap(
                 - "col": each column (per `cat_x` / `cat_x`+`cat_split`
                   combination) sums to 1.
                 - "all": the entire table sums to 1.
-        log_scale: If True, color the heatmap using log1p-transformed
-            values while still annotating cells with the original
-            (non-log) values. Defaults to False.
+        log_scale: If True, color the heatmap using log10(x + 1)
+            transformed values while still annotating cells with the
+            original (non-log) values. Defaults to False.
         annotate: If True, print the value inside each cell. Defaults to
             True.
         annotate_fmt: Format spec used for the annotations (e.g. `"d"`
@@ -959,6 +967,16 @@ def plot_categorical_heatmap(
         group_label_fontsize: Font size for the outer (`cat_x`) group
             labels, shown below the split labels. Only used when
             `cat_split` is provided.
+        group_label_pad: Vertical gap, in points, between the bottom of
+            the rendered `cat_split` tick labels and the top of the
+            `cat_x` group labels. Only used when `cat_split` is provided.
+            Defaults to 8.
+        xlabel_pad: Vertical gap, in points, between the bottom of the
+            rendered `cat_x` group labels and the x-axis title. Only used
+            when `cat_split` is provided. Defaults to 12.
+        bottom_pad: Extra vertical space, in points, reserved below the
+            x-axis title so it isn't clipped by the figure edge. Only
+            used when `cat_split` is provided. Defaults to 8.
         save_path: If provided, saves the figure to this path.
         dpi: Resolution for the saved figure.
 
@@ -1085,16 +1103,49 @@ def plot_categorical_heatmap(
         ax.set_xticklabels(
             split_labels, rotation=45, ha="right", rotation_mode="anchor", fontsize=split_label_fontsize
         )
-        trans = ax.get_xaxis_transform()
+
+        def _points_to_fig_frac(pts, fig_h_px):
+            return (pts / 72.0 * fig.dpi) / fig_h_px
+
+        # Draw once so we can measure the *actual* rendered extent of the
+        # split tick labels (depends on fontsize, rotation, and string length).
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        fig_h_px = fig.get_size_inches()[1] * fig.dpi
+
+        tick_bboxes = [t.get_window_extent(renderer) for t in ax.get_xticklabels()]
+        tick_bottom_fig = min(b.y0 for b in tick_bboxes) / fig_h_px
+
+        blended_data_fig = mtransforms.blended_transform_factory(ax.transData, fig.transFigure)
+        group_y_fig = tick_bottom_fig - _points_to_fig_frac(group_label_pad, fig_h_px)
+        group_texts = []
         for xv in x_categories:
             idxs = group_col_idx[xv]
             center = np.mean(col_centers[idxs])
-            ax.text(
-                center - 0.3, -0.30, str(xv), ha="right", va="top", rotation=45, rotation_mode="anchor",
-                transform=trans, fontsize=group_label_fontsize, fontweight="bold",
+            txt = ax.text(
+                center, group_y_fig, str(xv), ha="right", va="top", rotation=45, rotation_mode="anchor",
+                transform=blended_data_fig, fontsize=group_label_fontsize, fontweight="bold",
+                annotation_clip=False,
             )
-        ax.set_xlabel(cat_x, labelpad=90)
-        fig.subplots_adjust(bottom=0.42)
+            group_texts.append(txt)
+
+        # Draw again to measure the group labels, then place the axis title
+        # just below them (again using a physical, point-based gap).
+        fig.canvas.draw()
+        group_bottom_fig = min(t.get_window_extent(renderer).y0 for t in group_texts) / fig_h_px
+        title_y_fig = group_bottom_fig - _points_to_fig_frac(xlabel_pad, fig_h_px)
+
+        blended_axes_fig = mtransforms.blended_transform_factory(ax.transAxes, fig.transFigure)
+        title_txt = ax.text(
+            0.5, title_y_fig, cat_x, ha="center", va="top",
+            transform=blended_axes_fig, fontsize=plt.rcParams["axes.labelsize"],
+            annotation_clip=False,
+        )
+
+        # Reserve just enough bottom margin so nothing gets clipped.
+        fig.canvas.draw()
+        title_bottom_fig = title_txt.get_window_extent(renderer).y0 / fig_h_px
+        fig.subplots_adjust(bottom=max(title_bottom_fig - _points_to_fig_frac(bottom_pad, fig_h_px), 0.02))
     else:
         ax.set_xticks(col_centers)
         ax.set_xticklabels(x_categories, rotation=45, ha="right", rotation_mode="anchor")
