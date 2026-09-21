@@ -324,3 +324,48 @@ def print_top_markers(
         print(f"Error: One or more of the requested columns do not exist in the DataFrame.")
         print(f"Available columns are: {dge_df.columns.tolist()}")
 
+def filter_markers_to_present_genes(
+    markers_by_celltype: dict[str, list[str]],
+    adata: AnnData,
+    gene_symbol_col: str = "gene_symbol",
+) -> dict[str, list[str]]:
+    """Filters a {cell_type: [gene_symbols]} dict down to genes present in adata.
+
+    Drops any gene symbols not found in `adata.var[gene_symbol_col]`, and
+    drops any cell types left with zero genes afterward. Useful before
+    passing a marker dictionary to plotting or dotplot functions that
+    would otherwise raise or silently skip missing genes.
+
+    Args:
+        markers_by_celltype: Dictionary mapping cell type names to lists
+            of gene symbols (e.g. from `markers_df_to_dict`).
+        adata: AnnData object to check gene presence against.
+        gene_symbol_col: Column in `adata.var` containing gene symbols.
+            Defaults to `"gene_symbol"`.
+
+    Returns:
+        A new dictionary with the same structure, containing only genes
+        present in `adata` and only cell types with at least one gene
+        remaining.
+
+    Raises:
+        ValueError: If `gene_symbol_col` is not found in `adata.var`.
+    """
+    if gene_symbol_col not in adata.var.columns:
+        raise ValueError(f"Column '{gene_symbol_col}' not found in adata.var.")
+
+    present = set(adata.var[gene_symbol_col].values)
+
+    filtered = {
+        ct: [g for g in genes if g in present]
+        for ct, genes in markers_by_celltype.items()
+    }
+    filtered = {ct: genes for ct, genes in filtered.items() if len(genes) > 0}
+
+    n_dropped_ct = len(markers_by_celltype) - len(filtered)
+    if n_dropped_ct > 0:
+        print(f"Dropped {n_dropped_ct} cell type(s) with no markers present in adata.")
+
+    return filtered
+
+

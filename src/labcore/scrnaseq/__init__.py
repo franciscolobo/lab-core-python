@@ -2,11 +2,14 @@
 
 # Promote key functions to the scrnaseq sub-package level for easy access
 
+# From genesets.py
+from .genesets import CELL_CYCLE_GENES_HUMAN
+
 # From analysis.py
 from .analysis import run_ora
 
 # From io.py
-from .io import read_cellbender_matrix_h5, build_gene_map_from_h5_paths
+from .io import read_cellbender_matrix_h5, build_gene_map_from_h5_paths, load_or_compute_adata
 
 # From qc.py
 from .qc import preprocess_sample, filter_outlier_cells, is_outlier
@@ -37,11 +40,12 @@ from .utils import (
     adata_status,
     rank_genes_groups_df,
     get_top_markers,
-    print_top_markers
+    print_top_markers,
+    filter_markers_to_present_genes,
 )
 
 # From workflows.py
-from .workflows import load_and_preprocess_from_manifest, run_downstream_analysis
+from .workflows import load_and_preprocess_from_manifest, run_downstream_analysis, run_scvi_integration
 
 # From preprocessing.py
 from .preprocessing import score_cell_cycle, preprocess_for_pca, score_gene_modules
@@ -85,4 +89,8 @@ __all__ = [
     "plot_umap_grid_interactive",
     "split_umap_interactive",
     "plot_proportions_interactive",
+    "CELL_CYCLE_GENES_HUMAN",
+    "filter_markers_to_present_genes",
+    "load_or_compute_adata",
+    "run_scvi_integration",
 ]

@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import anndata as ad
 import scipy.sparse as sp
+from typing import Callable
 
 # --- Helper Functions (Internal) ---
 
@@ -85,3 +86,54 @@ def build_gene_map_from_h5_paths(h5_paths) -> pd.Series:
     gene_map = all_map.set_index("gene_id")["gene_symbol"]
     return gene_map
 
+def load_or_compute_adata(
+    path: str | Path,
+    compute_fn: Callable[[], AnnData],
+    overwrite: bool = False,
+) -> AnnData:
+    """Loads a cached AnnData object from disk, or computes and saves it.
+
+    Wraps the common "if cached file exists, load it; otherwise run the
+    pipeline and save the result" pattern used across preprocessing
+    notebooks, so the branching logic doesn't need to be repeated at
+    each checkpoint (raw loading, normalization, integration, etc.).
+
+    Args:
+        path: Path to the cached `.h5ad` file.
+        compute_fn: Zero-argument callable that runs the pipeline and
+            returns the resulting AnnData object when the cache is
+            missing or `overwrite=True`. Typically a lambda or small
+            wrapper closing over the actual pipeline call, e.g.
+            ``lambda: scrnaseq.load_and_preprocess_from_manifest(...)``.
+        overwrite: If `True`, ignore any existing cached file and
+            recompute. Defaults to `False`.
+
+    Returns:
+        The loaded or newly computed AnnData object. When computed
+        fresh, it is also written to `path` before being returned.
+
+    Example:
+        >>> adata = load_or_compute_adata(
+        ...     PROCESSED_ADATA_PATH,
+        ...     compute_fn=lambda: scrnaseq.load_and_preprocess_from_manifest(
+        ...         manifest_path=MANIFEST_PATH,
+        ...         min_genes=200,
+        ...         max_pct_mito=10.0,
+        ...     ),
+        ...     overwrite=OVERWRITE,
+        ... )
+    """
+    path = Path(path)
+
+    if path.exists() and not overwrite:
+        print(f"Loading cached data from: {path}")
+        return ad.read_h5ad(path)
+
+    print(f"Cached file not found (or overwrite=True). Running pipeline for: {path}")
+    adata = compute_fn()
+
+    print(f"Saving result to: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    adata.write_h5ad(path)
+
+    return adata
