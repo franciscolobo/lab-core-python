@@ -88,9 +88,9 @@ def build_gene_map_from_h5_paths(h5_paths) -> pd.Series:
 
 def load_or_compute_adata(
     path: str | Path,
-    compute_fn: Callable[[], AnnData],
+    compute_fn: Callable[[], "ad.AnnData"],
     overwrite: bool = False,
-) -> AnnData:
+) -> "ad.AnnData":
     """Loads a cached AnnData object from disk, or computes and saves it.
 
     Wraps the common "if cached file exists, load it; otherwise run the
