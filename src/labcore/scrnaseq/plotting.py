@@ -316,7 +316,6 @@ def plot_umap_grid(
     
     axs = np.array(axs).flatten()
 
-    # --- THIS IS THE NEW, ROBUST FIX FOR SQUARE PLOTS ---
     # 1. Get the global limits of the UMAP embedding
     umap_coords = adata.obsm['X_umap']
     x_min, y_min = umap_coords.min(axis=0)

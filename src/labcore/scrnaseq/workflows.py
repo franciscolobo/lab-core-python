@@ -137,3 +137,139 @@ def run_downstream_analysis(
     full_adata.obs["leiden"] = adata_hvg.obs["leiden"].astype("category")
 
     return full_adata
+
+def run_scvi_integration(
+    adata: AnnData,
+    batch_key: str,
+    continuous_covariate_keys: list[str] | None = None,
+    categorical_covariate_keys: list[str] | None = None,
+    counts_layer: str = "counts",
+    n_top_genes: int = 3000,
+    hvg_flavor: str = "seurat_v3",
+    n_layers: int = 1,
+    n_latent: int = 10,
+    gene_likelihood: str = "nb",
+    n_neighbors: int = 15,
+    leiden_resolution: float = 1.0,
+    train_kwargs: dict | None = None,
+    model_kwargs: dict | None = None,
+) -> AnnData:
+    """
+    Runs scVI integration and transfers the results back onto the full,
+    all-gene AnnData object.
+
+    HVGs are selected for training the scVI model, but unlike calling
+    `sc.pp.highly_variable_genes(..., subset=True)` directly, the input
+    `adata` is never subsetted in place — all genes are retained in the
+    returned object, with only `.var["highly_variable"]` marking which
+    genes scVI was trained on. `.obsm["X_scVI"]`, neighbors, UMAP, and
+    Leiden clusters are computed on the HVG-restricted latent space and
+    attached back onto the full object, mirroring the transfer pattern
+    used by `run_downstream_analysis`.
+
+    Args:
+        adata: AnnData object with raw counts available in
+            `adata.layers[counts_layer]`. Kept fully intact (all genes)
+            in the returned object.
+        batch_key: Column in `adata.obs` identifying the batch to
+            integrate over (passed to `scvi.model.SCVI.setup_anndata`).
+        continuous_covariate_keys: Optional list of columns in
+            `adata.obs` holding continuous covariates to regress out
+            inside the model (e.g. `["S_score", "G2M_score"]` for cell
+            cycle). Passed through to `setup_anndata`. Defaults to
+            `None` (no continuous covariates).
+        categorical_covariate_keys: Optional list of columns in
+            `adata.obs` holding categorical covariates (e.g. sample
+            batch beyond `batch_key`, or genotype). Passed through to
+            `setup_anndata`. Defaults to `None`.
+        counts_layer: Layer in `adata.layers` containing raw counts.
+            Defaults to `"counts"`.
+        n_top_genes: Number of highly variable genes to select for
+            training. Defaults to 3000.
+        hvg_flavor: Flavor passed to `sc.pp.highly_variable_genes`.
+            Defaults to `"seurat_v3"` (expects raw counts).
+        n_layers: Number of hidden layers in the scVI encoder/decoder.
+            Defaults to 1.
+        n_latent: Dimensionality of the scVI latent space. Defaults
+            to 10.
+        gene_likelihood: Likelihood model used by scVI (e.g. `"nb"`,
+            `"zinb"`, `"poisson"`). Defaults to `"nb"`.
+        n_neighbors: Number of neighbors for the post-integration
+            neighbor graph. Defaults to 15.
+        leiden_resolution: Resolution passed to `sc.tl.leiden`.
+            Defaults to 1.0.
+        train_kwargs: Optional dict of extra keyword arguments forwarded
+            to `model.train()` (e.g. `{"max_epochs": 400}`).
+        model_kwargs: Optional dict of extra keyword arguments forwarded
+            to `scvi.model.SCVI(...)` beyond `n_layers`, `n_latent`, and
+            `gene_likelihood`.
+
+    Returns:
+        The input `adata`, retaining all genes, updated with:
+            - `.var["highly_variable"]`: HVG flag used for training
+            - `.obsm["X_scVI"]`: scVI latent representation
+            - `.obsp["connectivities"]`, `.obsp["distances"]`: neighbor graph
+            - `.obsm["X_umap"]`: UMAP coordinates
+            - `.obs["leiden"]`: cluster assignments
+
+    Raises:
+        ValueError: If `counts_layer` is not found in `adata.layers`.
+    """
+    import scvi
+
+    if counts_layer not in adata.layers:
+        raise ValueError(
+            f"Layer '{counts_layer}' not found in adata.layers. "
+            f"Available layers: {list(adata.layers.keys())}"
+        )
+
+    train_kwargs = train_kwargs or {}
+    model_kwargs = model_kwargs or {}
+
+    # --- Select HVGs without subsetting the full object ---
+    print(f"Selecting top {n_top_genes} HVGs (flavor='{hvg_flavor}')...")
+    sc.pp.highly_variable_genes(
+        adata,
+        n_top_genes=n_top_genes,
+        flavor=hvg_flavor,
+        layer=counts_layer,
+        batch_key=batch_key,
+        subset=False,
+    )
+
+    # --- Train scVI on a separate HVG-only copy ---
+    adata_scvi = adata[:, adata.var["highly_variable"]].copy()
+
+    print("Registering data with scVI...")
+    scvi.model.SCVI.setup_anndata(
+        adata_scvi,
+        layer=counts_layer,
+        batch_key=batch_key,
+        continuous_covariate_keys=continuous_covariate_keys,
+        categorical_covariate_keys=categorical_covariate_keys,
+    )
+
+    print(
+        f"Training scVI (n_layers={n_layers}, n_latent={n_latent}, "
+        f"gene_likelihood='{gene_likelihood}')..."
+    )
+    model = scvi.model.SCVI(
+        adata_scvi,
+        n_layers=n_layers,
+        n_latent=n_latent,
+        gene_likelihood=gene_likelihood,
+        **model_kwargs,
+    )
+    model.train(**train_kwargs)
+
+    # --- Transfer latent representation back onto the full object ---
+    adata.obsm["X_scVI"] = model.get_latent_representation()
+
+    print(f"Computing neighbors (n_neighbors={n_neighbors}) on X_scVI...")
+    sc.pp.neighbors(adata, use_rep="X_scVI", n_neighbors=n_neighbors)
+    print("Computing UMAP...")
+    sc.tl.umap(adata)
+    print(f"Computing Leiden clusters (resolution={leiden_resolution})...")
+    sc.tl.leiden(adata, resolution=leiden_resolution)
+
+    return adata
